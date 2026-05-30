@@ -181,40 +181,9 @@ jobs:
           path: dextr-*-linux-x64.tar.gz
           if-no-files-found: error
 
-  build-web:
-    name: Build Web
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: ${{ env.FLUTTER_CHANNEL }}
-
-      - name: Resolve version
-        id: ver
-        run: |
-          VERSION=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*([^+]+).*/\1/' | tr -d '[:space:]')
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - run: flutter pub get
-
-      - name: Build web app
-        run: flutter build web --release
-
-      - name: Archive web build
-        run: cd build/web && zip -r -q "$GITHUB_WORKSPACE/dextr-${{ steps.ver.outputs.version }}-web.zip" .
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: web
-          path: dextr-*-web.zip
-          if-no-files-found: error
-
   release:
     name: Publish GitHub Release
-    needs: [build-macos, build-windows, build-linux, build-web]
+    needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -238,4 +207,3 @@ jobs:
             artifacts/macos/*.dmg
             artifacts/windows/*.zip
             artifacts/linux/*.tar.gz
-            artifacts/web/*.zip

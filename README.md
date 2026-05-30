@@ -2,78 +2,75 @@
 
 Cross-platform database & data-source management tool, built with Flutter.
 
-## Supported platforms & architectures
+Desktop only — `dextr` connects directly to databases over TCP sockets and via
+native SQLite (FFI), neither of which exist in a browser, so there is no web
+build. Mobile (Android/iOS) is not targeted.
+
+## Supported platforms
 
 | Platform | Architectures | Release artifact |
 |----------|---------------|------------------|
-| Android  | arm (armeabi-v7a), arm64 (arm64-v8a), x86_64 | per-ABI `.apk` + universal `.aab` |
-| iOS      | arm64 | unsigned `.ipa` |
-| Linux    | x64, arm64 | `dextr-linux-<arch>.tar.gz` |
-| Windows  | x64 | `dextr-windows-x64.zip` |
-| macOS    | universal (arm64 + x86_64) | `dextr-macos.zip` |
-| Web      | n/a | `dextr-web.zip` |
+| macOS    | universal (arm64 + x86_64), plus per-arch | `dextr-<version>-macos-{universal,arm64,x64}.dmg` |
+| Windows  | x64 | `dextr-<version>-windows-x64.zip` |
+| Linux    | x64 | `dextr-<version>-linux-x64.tar.gz` |
 
-> Windows is x64 only — Flutter has no official Windows arm64 desktop target; arm64 devices run the x64 build under emulation.
+> Windows is x64 only — Flutter has no official Windows arm64 desktop target.
 
 ## Install
 
-Pulls the matching artifact from the latest GitHub Release and installs it for your platform.
+Pulls the matching artifact from the latest GitHub Release and installs it.
 
-**Linux / macOS:**
+**macOS / Linux** (requires `sudo`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.sh | sh
 ```
 
-**Windows (PowerShell):**
+**Windows** (PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.ps1 | iex
 ```
 
-Replace `OWNER` with the GitHub owner. Overrides via env vars: `DEXTR_REPO` (owner/repo), `DEXTR_VERSION` (e.g. `v0.1.0`, default latest), `DEXTR_BIN` (Linux symlink dir, default `~/.local/bin`).
-
 | OS | Installs to |
 |----|-------------|
-| Linux | bundle → `~/.local/share/dextr`, symlink → `~/.local/bin/dextr` |
-| macOS | `dextr.app` → `/Applications` (quarantine stripped — unsigned build) |
-| Windows | `%LOCALAPPDATA%\Programs\dextr`, added to user PATH |
+| macOS | `/Applications/dextr.app` (quarantine stripped — unsigned build) |
+| Linux | `/opt/dextr`, symlink `/usr/local/bin/dextr`, desktop entry + icon |
+| Windows | `%LOCALAPPDATA%\Programs\dextr`, Start Menu shortcut |
 
-> Android / iOS / Web are not shell-installable — grab the `.apk` / `.ipa` / web archive from the [Releases](https://github.com/JayashBhandary/dextr/releases) page.
+Set `GITHUB_TOKEN` before running to avoid GitHub API rate limits.
 
 ## Build locally
 
-Requires the Flutter SDK (`stable`, Dart `>= 3.12`).
+Requires the Flutter SDK (`stable` 3.44.0, Dart `>= 3.12`).
 
 ```bash
 flutter pub get
-# generate freezed / riverpod / json_serializable sources
-dart run build_runner build --delete-conflicting-outputs
+
+flutter build macos --release     # macOS universal
+flutter build windows --release   # Windows x64
+flutter build linux --release     # Linux x64
 ```
 
-Then build per platform:
-
-```bash
-flutter build apk --release --split-per-abi   # Android (arm, arm64, x86_64)
-flutter build appbundle --release             # Android Play Store bundle
-flutter build ios --release --no-codesign     # iOS (unsigned)
-flutter build linux --release                 # Linux (host arch)
-flutter build windows --release               # Windows x64
-flutter build macos --release                 # macOS universal
-flutter build web --release                   # Web
-```
+> No `build_runner` step — the project declares codegen dev-deps but does not
+> use any `@freezed` / `@riverpod` / `@JsonSerializable` annotations yet.
 
 ## CI: build & release
 
-`.github/workflows/release.yml` builds every platform/architecture and publishes a GitHub Release.
+`.github/workflows/release.yml` builds macOS, Windows, and Linux and publishes a
+GitHub Release.
 
-**Trigger:** push a tag matching `v*` (matches the `pubspec.yaml` version), or run manually via `workflow_dispatch`.
+- **Trigger:** `workflow_dispatch` only (Actions tab → Release → *Run workflow*).
+- **Version:** read from the `version:` line in `pubspec.yaml`; the release is
+  tagged `v<version>` (e.g. `0.1.0+1` → `v0.1.0`).
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+gh workflow run release.yml
 ```
 
-Each job runs `build_runner` codegen, builds, and uploads artifacts; the final `release` job attaches them all to the tag's GitHub Release with auto-generated notes.
+Each job builds and uploads its artifact; the final `release` job attaches them
+all to the `v<version>` tag with auto-generated notes.
 
-> **Signing:** iOS, macOS, and Android artifacts are **unsigned**. For store distribution add signing certs / keystore via repository secrets and the matching signing steps.
+> **Signing:** macOS artifacts are **unsigned** (ad-hoc codesigned after `lipo`
+> thinning). For notarized distribution, add a Developer ID cert via repository
+> secrets and the matching signing steps.
