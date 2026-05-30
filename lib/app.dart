@@ -5,15 +5,15 @@ import 'router.dart';
 import 'state/settings_provider.dart';
 import 'theme/app_theme.dart';
 
-class DexterApp extends ConsumerWidget {
-  const DexterApp({super.key});
+class DextrApp extends ConsumerWidget {
+  const DextrApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     final settings = ref.watch(settingsProvider);
     return MaterialApp.router(
-      title: 'Dexter',
+      title: 'Dextr',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(
           seed: settings.seed, compact: settings.compactDensity),

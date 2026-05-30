@@ -11,7 +11,7 @@ class SecretsStore {
 
   final FlutterSecureStorage _storage;
 
-  String _key(String secretsRef) => 'dexter.secret.$secretsRef';
+  String _key(String secretsRef) => 'dextr.secret.$secretsRef';
 
   Future<void> write(String secretsRef, ConnectionSecrets secrets) async {
     if (secrets.isEmpty) {

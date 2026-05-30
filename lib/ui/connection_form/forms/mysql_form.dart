@@ -50,7 +50,7 @@ class _MysqlFormState extends State<MysqlForm> {
     _name = TextEditingController(text: i?.name ?? 'My MySQL');
     _host = TextEditingController(text: i?.host ?? 'localhost');
     _port = TextEditingController(text: '${i?.port ?? 3306}');
-    _database = TextEditingController(text: i?.database ?? 'dexter');
+    _database = TextEditingController(text: i?.database ?? 'dextr');
     _username = TextEditingController(text: i?.username ?? 'root');
     _password = TextEditingController(text: i?.password ?? '');
     _secure = i?.secure ?? false;

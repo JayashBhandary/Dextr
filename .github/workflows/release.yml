@@ -38,7 +38,7 @@ jobs:
 
       - name: Verify universal binary
         run: |
-          BIN="build/macos/Build/Products/Release/dexter.app/Contents/MacOS/dexter"
+          BIN="build/macos/Build/Products/Release/dextr.app/Contents/MacOS/dextr"
           file "$BIN"
           lipo -info "$BIN"
           lipo -info "$BIN" | grep -E 'arm64' && lipo -info "$BIN" | grep -E 'x86_64'
@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
-          SRC="build/macos/Build/Products/Release/dexter.app"
+          SRC="build/macos/Build/Products/Release/dextr.app"
 
           thin_app() {
             local app="$1"
@@ -65,7 +65,7 @@ jobs:
             local flavor="$1"
             local arch="$2"   # empty = universal, no thinning
             local stage="dist/$flavor"
-            local app_copy="$stage/dexter.app"
+            local app_copy="$stage/dextr.app"
             rm -rf "$stage"
             mkdir -p "$stage"
             cp -R "$SRC" "$app_copy"
@@ -75,14 +75,14 @@ jobs:
               echo "==> Thinning $flavor to $arch"
               thin_app "$app_copy" "$arch"
               echo "==> Verifying thinned main binary"
-              lipo -info "$app_copy/Contents/MacOS/dexter"
+              lipo -info "$app_copy/Contents/MacOS/dextr"
             fi
 
             hdiutil create \
-              -volname "dexter" \
+              -volname "dextr" \
               -srcfolder "$stage" \
               -ov -format UDZO \
-              "dexter-${VERSION}-macos-${flavor}.dmg"
+              "dextr-${VERSION}-macos-${flavor}.dmg"
           }
 
           package_dmg "universal" ""
@@ -92,7 +92,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: dexter-*-macos-*.dmg
+          path: dextr-*-macos-*.dmg
           if-no-files-found: error
 
   build-windows:
@@ -123,13 +123,13 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ steps.ver.outputs.version }}"
-          $dest = "dexter-$version-windows-x64.zip"
+          $dest = "dextr-$version-windows-x64.zip"
           Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath $dest
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dexter-*-windows-x64.zip
+          path: dextr-*-windows-x64.zip
           if-no-files-found: error
 
   build-linux:
@@ -167,23 +167,54 @@ jobs:
       - name: Stage desktop entry and icon
         run: |
           BUNDLE="build/linux/x64/release/bundle"
-          cp linux/packaging/dexter.desktop "$BUNDLE/dexter.desktop"
-          cp assets/icon/icon.png "$BUNDLE/dexter.png"
+          cp linux/packaging/dextr.desktop "$BUNDLE/dextr.desktop"
+          cp assets/icon/icon.png "$BUNDLE/dextr.png"
 
       - name: Package tarball
         run: |
-          tar -czf "dexter-${{ steps.ver.outputs.version }}-linux-x64.tar.gz" \
+          tar -czf "dextr-${{ steps.ver.outputs.version }}-linux-x64.tar.gz" \
             -C build/linux/x64/release/bundle .
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: dexter-*-linux-x64.tar.gz
+          path: dextr-*-linux-x64.tar.gz
+          if-no-files-found: error
+
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+
+      - name: Resolve version
+        id: ver
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*([^+]+).*/\1/' | tr -d '[:space:]')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - run: flutter pub get
+
+      - name: Build web app
+        run: flutter build web --release
+
+      - name: Archive web build
+        run: cd build/web && zip -r -q "$GITHUB_WORKSPACE/dextr-${{ steps.ver.outputs.version }}-web.zip" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: dextr-*-web.zip
           if-no-files-found: error
 
   release:
     name: Publish GitHub Release
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-macos, build-windows, build-linux, build-web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -201,9 +232,10 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: dexter ${{ steps.ver.outputs.tag }}
+          name: dextr ${{ steps.ver.outputs.tag }}
           generate_release_notes: true
           files: |
             artifacts/macos/*.dmg
             artifacts/windows/*.zip
             artifacts/linux/*.tar.gz
+            artifacts/web/*.zip

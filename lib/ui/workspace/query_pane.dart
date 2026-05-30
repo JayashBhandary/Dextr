@@ -77,7 +77,7 @@ class QueryPane extends ConsumerWidget {
                             : 'No rows',
                       ),
                     )
-                  : DexterDataGrid(
+                  : DextrDataGrid(
                       columns: exec.result!.columns,
                       rows: exec.result!.rows,
                     ),

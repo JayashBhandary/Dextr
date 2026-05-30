@@ -1,5 +1,5 @@
-import 'package:dexter/connectors/sql_common/sql_type_mapper.dart';
-import 'package:dexter/core/cell_value.dart';
+import 'package:dextr/connectors/sql_common/sql_type_mapper.dart';
+import 'package:dextr/core/cell_value.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

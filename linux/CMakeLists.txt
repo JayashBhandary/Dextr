@@ -9,10 +9,10 @@ add_link_options("-Wl,--allow-shlib-undefined")
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "dexter")
+set(BINARY_NAME "dextr")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.dexter.dexter")
+set(APPLICATION_ID "com.dextr.dextr")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

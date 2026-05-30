@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dexter/core/cell_value.dart';
+import 'package:dextr/core/cell_value.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

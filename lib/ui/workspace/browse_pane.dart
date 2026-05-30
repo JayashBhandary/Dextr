@@ -355,7 +355,7 @@ class _BrowsePaneState extends ConsumerState<BrowsePane> {
         Expanded(
           child: _rows.isEmpty && _error == null
               ? const Center(child: Text('No rows'))
-              : DexterDataGrid(
+              : DextrDataGrid(
                   columns: _cols,
                   rows: _rows,
                   onRowTap: _editRow,

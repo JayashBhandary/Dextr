@@ -28,7 +28,7 @@ class SidebarConnections extends ConsumerWidget {
               Icon(Icons.hub_rounded, color: theme.colorScheme.primary),
               const SizedBox(width: Spacing.sm),
               Expanded(
-                child: Text('Dexter',
+                child: Text('Dextr',
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleLarge
                         ?.copyWith(fontWeight: FontWeight.w700)),

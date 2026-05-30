@@ -16,7 +16,7 @@ Future<void> main() async {
       size: Size(1280, 820),
       minimumSize: Size(960, 600),
       center: true,
-      title: 'Dexter',
+      title: 'Dextr',
     );
     await windowManager.waitUntilReadyToShow(opts, () async {
       await windowManager.show();
@@ -24,5 +24,5 @@ Future<void> main() async {
     });
   }
 
-  runApp(const ProviderScope(child: DexterApp()));
+  runApp(const ProviderScope(child: DextrApp()));
 }

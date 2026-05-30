@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:dexter/connectors/data_source.dart';
-import 'package:dexter/core/capabilities.dart';
-import 'package:dexter/core/cell_value.dart';
-import 'package:dexter/core/query_spec.dart';
-import 'package:dexter/connectors/sqlite/sqlite_data_source.dart';
-import 'package:dexter/domain/connection_record.dart';
+import 'package:dextr/connectors/data_source.dart';
+import 'package:dextr/core/capabilities.dart';
+import 'package:dextr/core/cell_value.dart';
+import 'package:dextr/core/query_spec.dart';
+import 'package:dextr/connectors/sqlite/sqlite_data_source.dart';
+import 'package:dextr/domain/connection_record.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -28,7 +28,7 @@ void main() {
   const tracks = ContainerRef(name: 'tracks');
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('dexter_sqlite_test');
+    tmp = await Directory.systemTemp.createTemp('dextr_sqlite_test');
     record = recordFor(p.join(tmp.path, 'test.db'));
     src = SqliteDataSource(record: record);
     await src.connect();

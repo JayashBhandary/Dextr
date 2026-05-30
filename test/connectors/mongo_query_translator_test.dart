@@ -1,6 +1,6 @@
-import 'package:dexter/connectors/mongo/mongo_query_translator.dart';
-import 'package:dexter/core/cell_value.dart';
-import 'package:dexter/core/query_spec.dart';
+import 'package:dextr/connectors/mongo/mongo_query_translator.dart';
+import 'package:dextr/core/cell_value.dart';
+import 'package:dextr/core/query_spec.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

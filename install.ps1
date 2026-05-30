@@ -1,16 +1,16 @@
-# dexter installer (Windows x64).
+# dextr installer (Windows x64).
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/JayashBhandary/dexter/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.ps1 | iex
 #
 # Downloads the latest GitHub release zip and installs to:
-#   %LOCALAPPDATA%\Programs\dexter
+#   %LOCALAPPDATA%\Programs\dextr
 # Also creates a Start Menu shortcut.
 
 $ErrorActionPreference = 'Stop'
 
-$Repo    = 'JayashBhandary/dexter'
-$AppName = 'dexter'
+$Repo    = 'JayashBhandary/dextr'
+$AppName = 'dextr'
 
 # GitHub API needs TLS 1.2 on older Windows / PowerShell
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -21,7 +21,7 @@ $headers = @{}
 if ($env:GITHUB_TOKEN) {
     $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN"
 }
-$headers['User-Agent'] = 'dexter-installer'
+$headers['User-Agent'] = 'dextr-installer'
 
 $release = Invoke-RestMethod `
     -Uri "https://api.github.com/repos/$Repo/releases/latest" `
@@ -56,7 +56,7 @@ try {
 
     # Locate the executable (Flutter builds <project-name>.exe, lowercased)
     $exe = Get-ChildItem -Path $installDir -Filter '*.exe' -File |
-           Where-Object { $_.Name -match '^(?i)dexter\.exe$' } |
+           Where-Object { $_.Name -match '^(?i)dextr\.exe$' } |
            Select-Object -First 1
 
     if (-not $exe) {

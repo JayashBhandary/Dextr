@@ -50,7 +50,7 @@ class _MongoFormState extends State<MongoForm> {
     _name = TextEditingController(text: i?.name ?? 'My Mongo');
     _host = TextEditingController(text: i?.host ?? 'localhost');
     _port = TextEditingController(text: '${i?.port ?? 27017}');
-    _database = TextEditingController(text: i?.database ?? 'dexter');
+    _database = TextEditingController(text: i?.database ?? 'dextr');
     _username = TextEditingController(text: i?.username ?? '');
     _password = TextEditingController(text: i?.password ?? '');
     _tls = i?.tls ?? false;

@@ -1,4 +1,4 @@
-# dexter
+# dextr
 
 Cross-platform database & data-source management tool, built with Flutter.
 
@@ -8,10 +8,10 @@ Cross-platform database & data-source management tool, built with Flutter.
 |----------|---------------|------------------|
 | Android  | arm (armeabi-v7a), arm64 (arm64-v8a), x86_64 | per-ABI `.apk` + universal `.aab` |
 | iOS      | arm64 | unsigned `.ipa` |
-| Linux    | x64, arm64 | `dexter-linux-<arch>.tar.gz` |
-| Windows  | x64 | `dexter-windows-x64.zip` |
-| macOS    | universal (arm64 + x86_64) | `dexter-macos.zip` |
-| Web      | n/a | `dexter-web.zip` |
+| Linux    | x64, arm64 | `dextr-linux-<arch>.tar.gz` |
+| Windows  | x64 | `dextr-windows-x64.zip` |
+| macOS    | universal (arm64 + x86_64) | `dextr-macos.zip` |
+| Web      | n/a | `dextr-web.zip` |
 
 > Windows is x64 only — Flutter has no official Windows arm64 desktop target; arm64 devices run the x64 build under emulation.
 
@@ -22,24 +22,24 @@ Pulls the matching artifact from the latest GitHub Release and installs it for y
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/dexter/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/OWNER/dexter/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.ps1 | iex
 ```
 
-Replace `OWNER` with the GitHub owner. Overrides via env vars: `DEXTER_REPO` (owner/repo), `DEXTER_VERSION` (e.g. `v0.1.0`, default latest), `DEXTER_BIN` (Linux symlink dir, default `~/.local/bin`).
+Replace `OWNER` with the GitHub owner. Overrides via env vars: `DEXTR_REPO` (owner/repo), `DEXTR_VERSION` (e.g. `v0.1.0`, default latest), `DEXTR_BIN` (Linux symlink dir, default `~/.local/bin`).
 
 | OS | Installs to |
 |----|-------------|
-| Linux | bundle → `~/.local/share/dexter`, symlink → `~/.local/bin/dexter` |
-| macOS | `dexter.app` → `/Applications` (quarantine stripped — unsigned build) |
-| Windows | `%LOCALAPPDATA%\Programs\dexter`, added to user PATH |
+| Linux | bundle → `~/.local/share/dextr`, symlink → `~/.local/bin/dextr` |
+| macOS | `dextr.app` → `/Applications` (quarantine stripped — unsigned build) |
+| Windows | `%LOCALAPPDATA%\Programs\dextr`, added to user PATH |
 
-> Android / iOS / Web are not shell-installable — grab the `.apk` / `.ipa` / web archive from the [Releases](https://github.com/OWNER/dexter/releases) page.
+> Android / iOS / Web are not shell-installable — grab the `.apk` / `.ipa` / web archive from the [Releases](https://github.com/JayashBhandary/dextr/releases) page.
 
 ## Build locally
 

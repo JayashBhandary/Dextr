@@ -1,17 +1,17 @@
 #!/usr/bin/env sh
-# dexter installer (macOS + Linux).
+# dextr installer (macOS + Linux).
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/JayashBhandary/dexter/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.sh | sh
 #
 # Detects platform/arch, downloads the latest GitHub release asset, and installs:
-#   macOS -> /Applications/dexter.app    (requires sudo)
-#   Linux -> /opt/dexter  + symlink at /usr/local/bin/dexter  (requires sudo)
+#   macOS -> /Applications/dextr.app    (requires sudo)
+#   Linux -> /opt/dextr  + symlink at /usr/local/bin/dextr  (requires sudo)
 
 set -eu
 
-REPO="JayashBhandary/dexter"
-APP_NAME="dexter"
+REPO="JayashBhandary/dextr"
+APP_NAME="dextr"
 
 # ---------- platform detection ----------
 OS="$(uname -s)"
@@ -122,12 +122,12 @@ case "$PLATFORM" in
     ;;
 
   linux)
-    INSTALL_DIR="/opt/dexter"
-    BIN_LINK="/usr/local/bin/dexter"
-    DESKTOP_FILE="/usr/share/applications/dexter.desktop"
+    INSTALL_DIR="/opt/dextr"
+    BIN_LINK="/usr/local/bin/dextr"
+    DESKTOP_FILE="/usr/share/applications/dextr.desktop"
     ICON_DIR="/usr/share/icons/hicolor/512x512/apps"
-    ICON_FILE="$ICON_DIR/dexter.png"
-    PIXMAP_FILE="/usr/share/pixmaps/dexter.png"
+    ICON_FILE="$ICON_DIR/dextr.png"
+    PIXMAP_FILE="/usr/share/pixmaps/dextr.png"
 
     echo "==> Installing to $INSTALL_DIR (sudo required)"
     sudo rm -rf "$INSTALL_DIR"
@@ -136,7 +136,7 @@ case "$PLATFORM" in
 
     # Find the executable inside the bundle and symlink it
     EXEC_PATH=""
-    for candidate in "$INSTALL_DIR/dexter" "$INSTALL_DIR/Dexter"; do
+    for candidate in "$INSTALL_DIR/dextr" "$INSTALL_DIR/Dextr"; do
       if [ -x "$candidate" ]; then
         EXEC_PATH="$candidate"
         break
@@ -150,21 +150,21 @@ case "$PLATFORM" in
     fi
 
     # Install desktop entry so it shows up in app launchers
-    if [ -f "$INSTALL_DIR/dexter.desktop" ] && [ -n "$EXEC_PATH" ]; then
+    if [ -f "$INSTALL_DIR/dextr.desktop" ] && [ -n "$EXEC_PATH" ]; then
       echo "==> Registering desktop entry at $DESKTOP_FILE"
       sudo mkdir -p "$(dirname "$DESKTOP_FILE")"
-      sudo sh -c "sed 's|@EXEC@|$EXEC_PATH|g' '$INSTALL_DIR/dexter.desktop' > '$DESKTOP_FILE'"
+      sudo sh -c "sed 's|@EXEC@|$EXEC_PATH|g' '$INSTALL_DIR/dextr.desktop' > '$DESKTOP_FILE'"
       sudo chmod 644 "$DESKTOP_FILE"
     fi
 
     # Install icon into the hicolor theme + /usr/share/pixmaps fallback
-    if [ -f "$INSTALL_DIR/dexter.png" ]; then
+    if [ -f "$INSTALL_DIR/dextr.png" ]; then
       echo "==> Installing app icon"
       sudo mkdir -p "$ICON_DIR"
-      sudo cp "$INSTALL_DIR/dexter.png" "$ICON_FILE"
+      sudo cp "$INSTALL_DIR/dextr.png" "$ICON_FILE"
       sudo chmod 644 "$ICON_FILE"
       sudo mkdir -p "$(dirname "$PIXMAP_FILE")"
-      sudo cp "$INSTALL_DIR/dexter.png" "$PIXMAP_FILE"
+      sudo cp "$INSTALL_DIR/dextr.png" "$PIXMAP_FILE"
       sudo chmod 644 "$PIXMAP_FILE"
     fi
 
@@ -179,7 +179,7 @@ case "$PLATFORM" in
     echo ""
     echo "Installed: $INSTALL_DIR"
     if [ -n "$EXEC_PATH" ]; then
-      echo "Launch:    dexter    (symlinked from $BIN_LINK), or from your app launcher"
+      echo "Launch:    dextr    (symlinked from $BIN_LINK), or from your app launcher"
     fi
     ;;
 esac

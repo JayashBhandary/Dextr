@@ -5,8 +5,8 @@ import 'cell_renderer.dart';
 
 /// Simple virtualized grid using DataTable inside nested ScrollViews.
 /// Replaceable with PlutoGrid post-v0.1 without changing the call sites.
-class DexterDataGrid extends StatefulWidget {
-  const DexterDataGrid({
+class DextrDataGrid extends StatefulWidget {
+  const DextrDataGrid({
     super.key,
     required this.columns,
     required this.rows,
@@ -18,10 +18,10 @@ class DexterDataGrid extends StatefulWidget {
   final void Function(int rowIndex, RowData row)? onRowTap;
 
   @override
-  State<DexterDataGrid> createState() => _DexterDataGridState();
+  State<DextrDataGrid> createState() => _DextrDataGridState();
 }
 
-class _DexterDataGridState extends State<DexterDataGrid> {
+class _DextrDataGridState extends State<DextrDataGrid> {
   final ScrollController _v = ScrollController();
   final ScrollController _h = ScrollController();
 
