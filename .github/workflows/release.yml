@@ -38,7 +38,7 @@ jobs:
 
       - name: Verify universal binary
         run: |
-          BIN="build/macos/Build/Products/Release/dextr.app/Contents/MacOS/dextr"
+          BIN="build/macos/Build/Products/Release/Dextr.app/Contents/MacOS/Dextr"
           file "$BIN"
           lipo -info "$BIN"
           lipo -info "$BIN" | grep -E 'arm64' && lipo -info "$BIN" | grep -E 'x86_64'
@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
-          SRC="build/macos/Build/Products/Release/dextr.app"
+          SRC="build/macos/Build/Products/Release/Dextr.app"
 
           thin_app() {
             local app="$1"
@@ -65,7 +65,7 @@ jobs:
             local flavor="$1"
             local arch="$2"   # empty = universal, no thinning
             local stage="dist/$flavor"
-            local app_copy="$stage/dextr.app"
+            local app_copy="$stage/Dextr.app"
             rm -rf "$stage"
             mkdir -p "$stage"
             cp -R "$SRC" "$app_copy"
@@ -75,11 +75,11 @@ jobs:
               echo "==> Thinning $flavor to $arch"
               thin_app "$app_copy" "$arch"
               echo "==> Verifying thinned main binary"
-              lipo -info "$app_copy/Contents/MacOS/dextr"
+              lipo -info "$app_copy/Contents/MacOS/Dextr"
             fi
 
             hdiutil create \
-              -volname "dextr" \
+              -volname "Dextr" \
               -srcfolder "$stage" \
               -ov -format UDZO \
               "dextr-${VERSION}-macos-${flavor}.dmg"

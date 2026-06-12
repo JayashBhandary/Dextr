@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.dextr" "\0"
-            VALUE "FileDescription", "dextr" "\0"
+            VALUE "CompanyName", "Jayash Bhandary" "\0"
+            VALUE "FileDescription", "Dextr" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "dextr" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.dextr. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Jayash Bhandary. All rights reserved." "\0"
             VALUE "OriginalFilename", "dextr.exe" "\0"
-            VALUE "ProductName", "dextr" "\0"
+            VALUE "ProductName", "Dextr" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

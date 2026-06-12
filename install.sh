@@ -5,13 +5,13 @@
 #   curl -fsSL https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.sh | sh
 #
 # Detects platform/arch, downloads the latest GitHub release asset, and installs:
-#   macOS -> /Applications/dextr.app    (requires sudo)
+#   macOS -> /Applications/Dextr.app    (requires sudo)
 #   Linux -> /opt/dextr  + symlink at /usr/local/bin/dextr  (requires sudo)
 
 set -eu
 
 REPO="JayashBhandary/dextr"
-APP_NAME="dextr"
+APP_NAME="Dextr"
 
 # ---------- platform detection ----------
 OS="$(uname -s)"
