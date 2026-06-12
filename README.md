@@ -1,10 +1,47 @@
 # dextr
 
-Cross-platform database & data-source management tool, built with Flutter.
+A cross-platform database & data-source management tool, built with Flutter.
 
-Desktop only — `dextr` connects directly to databases over TCP sockets and via
+A typical afternoon: you `psql` into one database, switch to a Mongo shell for
+another, open a desktop client for MySQL, poke an S3 bucket in a browser tab,
+and `curl` a REST endpoint to check a payload. Five tools, five mental models,
+five places to fat-finger a production credential.
+
+dextr collapses that into one tabbed workspace. Connect to SQL, NoSQL, object
+storage, or HTTP APIs side by side — browse containers, edit rows in a grid, run
+raw queries, and inspect schemas, all the same way. Credentials live in the OS
+keychain, not in your shell history.
+
+Desktop only — dextr connects directly to databases over TCP sockets and via
 native SQLite (FFI), neither of which exist in a browser, so there is no web
 build. Mobile (Android/iOS) is not targeted.
+
+## Data sources
+
+| Source | Browse / edit | Raw query | Notes |
+|--------|:---:|:---:|-------|
+| SQLite | ✓ | SQL | local file, via FFI |
+| PostgreSQL | ✓ | SQL | |
+| MySQL | ✓ | SQL | |
+| MongoDB | ✓ | query doc | |
+| Firestore | ✓ | — | via REST, multi-project |
+| S3 / MinIO | ✓ | — | hierarchical file browser, presigned URLs |
+| REST API | ✓ | endpoint | saved operations |
+| GraphQL API | ✓ | endpoint | saved operations |
+
+Each connector advertises its capabilities (raw query, write, schema
+read/mutate, transactions, object storage, file browse, endpoint invoke) and the
+UI adapts to what the backend actually supports.
+
+## Workspace
+
+- **Connections sidebar** with secure credential storage (`flutter_secure_storage`).
+- **Object tree** per connection — tables, collections, buckets, saved operations.
+- **Browse pane** — paginated `pluto_grid` with inline insert / update / delete.
+- **Query pane** — SQL editor with syntax highlighting for query-capable sources.
+- **Schema pane** — columns, types, primary keys.
+- **File browser** — upload / download / preview for object stores.
+- Multiple workspace **tabs** open at once.
 
 ## Supported platforms
 
@@ -42,7 +79,7 @@ Set `GITHUB_TOKEN` before running to avoid GitHub API rate limits.
 
 ## Build locally
 
-Requires the Flutter SDK (`stable` 3.44.0, Dart `>= 3.12`).
+Requires the Flutter SDK (`stable`, Dart `>= 3.12`).
 
 ```bash
 flutter pub get
@@ -74,3 +111,5 @@ all to the `v<version>` tag with auto-generated notes.
 > **Signing:** macOS artifacts are **unsigned** (ad-hoc codesigned after `lipo`
 > thinning). For notarized distribution, add a Developer ID cert via repository
 > secrets and the matching signing steps.
+</content>
+</invoke>
