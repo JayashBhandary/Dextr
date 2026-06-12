@@ -25,7 +25,15 @@ class SidebarConnections extends ConsumerWidget {
               Spacing.lg, Spacing.lg, Spacing.sm, Spacing.sm),
           child: Row(
             children: [
-              Icon(Icons.hub_rounded, color: theme.colorScheme.primary),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.asset(
+                  'assets/icon/icon.png',
+                  width: 24,
+                  height: 24,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
               const SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text('Dextr',
