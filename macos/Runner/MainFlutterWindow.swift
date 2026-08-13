@@ -9,6 +9,7 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    FileAccess.register(with: flutterViewController.registrar(forPlugin: "FileAccess"))
 
     super.awakeFromNib()
   }

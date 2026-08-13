@@ -1,117 +1,119 @@
-import 'package:flutter/material.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../connectors/data_source.dart';
 import '../../connectors/sql_common/sql_type_mapper.dart';
 import '../../core/cell_value.dart';
-import '../../theme/tokens.dart';
 
 class RowFormResult {
   const RowFormResult(this.values);
+
   final Map<String, CellValue> values;
 }
 
+/// The fields of one row, for insert or update.
+///
+/// Just the fields: the dialog that holds this owns the Save and Cancel
+/// buttons, because they belong in the dialog's pinned footer rather than
+/// scrolling away with the last column of a wide table.
 class RowForm extends StatefulWidget {
   const RowForm({
     super.key,
     required this.schema,
+    required this.controller,
     this.initial,
-    required this.onSubmit,
-    this.submitLabel = 'Save',
   });
 
   final ContainerSchema schema;
+
+  /// Owns the field values, so the dialog's footer button can read them.
+  final RowFormController controller;
   final RowData? initial;
-  final ValueChanged<RowFormResult> onSubmit;
-  final String submitLabel;
 
   @override
   State<RowForm> createState() => _RowFormState();
 }
 
 class _RowFormState extends State<RowForm> {
-  late final Map<String, TextEditingController> _controllers;
-
   @override
   void initState() {
     super.initState();
-    _controllers = {
-      for (final c in widget.schema.columns)
-        c.name: TextEditingController(
-          text: widget.initial?[c.name]?.display() ?? '',
-        ),
-    };
-  }
-
-  @override
-  void dispose() {
-    for (final c in _controllers.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  void _submit() {
-    final values = <String, CellValue>{};
-    for (final col in widget.schema.columns) {
-      final raw = _controllers[col.name]!.text;
-      final family = familyForSqlType(col.typeLabel);
-      values[col.name] = parseString(raw, family);
-    }
-    widget.onSubmit(RowFormResult(values));
+    widget.controller._attach(widget.schema, widget.initial);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(Spacing.lg),
-            children: [
-              for (final col in widget.schema.columns) ...[
-                Text(
-                  '${col.name}  ',
-                  style: theme.textTheme.labelLarge,
-                ),
-                Text(
-                  '${col.typeLabel}${col.isPrimaryKey ? '  PK' : ''}${col.nullable ? '' : '  NOT NULL'}',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.outline),
-                ),
-                const SizedBox(height: Spacing.xs),
-                TextField(
-                  controller: _controllers[col.name],
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: Spacing.md),
-              ],
-            ],
+    return AstryxFormLayout(
+      children: <Widget>[
+        for (final column in widget.schema.columns)
+          AstryxTextInput(
+            label: column.name,
+            controller: widget.controller._controllers[column.name],
+            // The type and the constraints are what tell somebody what may go
+            // in the box, so they are the description rather than a tooltip.
+            description: _describe(column),
+            // A primary key is shown, and shown as unchangeable — dimming it
+            // would say the field does not apply, which is the opposite of true.
+            readOnly: column.isPrimaryKey && widget.initial != null,
+            required: !column.nullable && column.defaultExpr == null,
+            optional: column.nullable,
+            placeholder: column.nullable ? 'NULL' : null,
           ),
-        ),
-        const Divider(height: 1),
-        Padding(
-          padding: const EdgeInsets.all(Spacing.md),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: Spacing.sm),
-              FilledButton(
-                onPressed: _submit,
-                child: Text(widget.submitLabel),
-              ),
-            ],
-          ),
-        ),
       ],
     );
+  }
+
+  String _describe(ColumnSchema column) => <String>[
+    column.typeLabel,
+    if (column.isPrimaryKey) 'primary key',
+    if (!column.nullable) 'not null',
+    if (column.defaultExpr != null) 'default ${column.defaultExpr}',
+  ].join(' · ');
+}
+
+/// Holds a row form's editors, so the form and the dialog around it agree about
+/// the values without either one owning the other.
+class RowFormController {
+  final Map<String, TextEditingController> _controllers =
+      <String, TextEditingController>{};
+  ContainerSchema? _schema;
+
+  void _attach(ContainerSchema schema, RowData? initial) {
+    _schema = schema;
+    for (final column in schema.columns) {
+      _controllers.putIfAbsent(
+        column.name,
+        () => TextEditingController(
+          text: switch (initial?[column.name]) {
+            null => '',
+            // An existing NULL stays empty rather than reading "NULL", which
+            // would be saved back as the four-letter string.
+            NullCell() => '',
+            final cell => cell.display(),
+          },
+        ),
+      );
+    }
+  }
+
+  /// The row as the backend should receive it. Each string is parsed into the
+  /// family its column declares, so "3" reaches an integer column as a number.
+  RowFormResult read() {
+    final schema = _schema;
+    if (schema == null) return const RowFormResult(<String, CellValue>{});
+    return RowFormResult(<String, CellValue>{
+      for (final column in schema.columns)
+        column.name: parseString(
+          _controllers[column.name]!.text,
+          familyForSqlType(column.typeLabel),
+        ),
+    });
+  }
+
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    _controllers.clear();
   }
 }

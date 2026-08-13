@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
 
-import '../../../theme/tokens.dart';
+import 'connection_form_shell.dart';
 
 class MysqlFormResult {
   const MysqlFormResult({
@@ -24,174 +24,140 @@ class MysqlFormResult {
 }
 
 class MysqlForm extends StatefulWidget {
-  const MysqlForm({super.key, required this.onSubmit, this.initial});
+  const MysqlForm({
+    super.key,
+    required this.onSubmit,
+    required this.onCancel,
+    this.initial,
+    this.onTest,
+  });
 
   final ValueChanged<MysqlFormResult> onSubmit;
+  final VoidCallback onCancel;
   final MysqlFormResult? initial;
+
+  /// Attempts a live connection with the given values; throws on failure.
+  final Future<void> Function(MysqlFormResult result)? onTest;
 
   @override
   State<MysqlForm> createState() => _MysqlFormState();
 }
 
-class _MysqlFormState extends State<MysqlForm> {
+class _MysqlFormState extends State<MysqlForm>
+    with ConnectionFormValidation<MysqlForm> {
   late final TextEditingController _name;
   late final TextEditingController _host;
-  late final TextEditingController _port;
   late final TextEditingController _database;
   late final TextEditingController _username;
   late final TextEditingController _password;
+  late num? _port;
   late bool _secure;
-  String? _error;
 
   @override
   void initState() {
     super.initState();
-    final i = widget.initial;
-    _name = TextEditingController(text: i?.name ?? 'My MySQL');
-    _host = TextEditingController(text: i?.host ?? 'localhost');
-    _port = TextEditingController(text: '${i?.port ?? 3306}');
-    _database = TextEditingController(text: i?.database ?? 'dextr');
-    _username = TextEditingController(text: i?.username ?? 'root');
-    _password = TextEditingController(text: i?.password ?? '');
-    _secure = i?.secure ?? false;
+    final initial = widget.initial;
+    _name = TextEditingController(text: initial?.name ?? 'My MySQL');
+    _host = TextEditingController(text: initial?.host ?? 'localhost');
+    _database = TextEditingController(text: initial?.database ?? 'dextr');
+    _username = TextEditingController(text: initial?.username ?? 'root');
+    _password = TextEditingController(text: initial?.password ?? '');
+    _port = initial?.port ?? 3306;
+    _secure = initial?.secure ?? false;
   }
 
   @override
   void dispose() {
     _name.dispose();
     _host.dispose();
-    _port.dispose();
     _database.dispose();
     _username.dispose();
     _password.dispose();
     super.dispose();
   }
 
-  void _submit() {
-    final port = int.tryParse(_port.text.trim());
+  MysqlFormResult? _validate() {
     if (_name.text.trim().isEmpty) {
-      setState(() => _error = 'Name required');
-      return;
+      return fail('name', 'Give this connection a name.');
     }
-    if (_host.text.trim().isEmpty) {
-      setState(() => _error = 'Host required');
-      return;
-    }
-    if (port == null) {
-      setState(() => _error = 'Port must be a number');
-      return;
-    }
-    widget.onSubmit(MysqlFormResult(
+    if (_host.text.trim().isEmpty) return fail('host', 'A host is required.');
+    final port = _port;
+    if (port == null) return fail('port', 'A port is required.');
+    clearValidation();
+    return MysqlFormResult(
       name: _name.text.trim(),
       host: _host.text.trim(),
-      port: port,
+      port: port.toInt(),
       database: _database.text.trim(),
       username: _username.text.trim(),
       password: _password.text,
       secure: _secure,
-    ));
+    );
+  }
+
+  void _submit() {
+    final result = _validate();
+    if (result != null) widget.onSubmit(result);
+  }
+
+  Future<void>? _runTest() {
+    final result = _validate();
+    if (result == null) return null;
+    return widget.onTest!(result);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(Spacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(
-              labelText: 'Connection name',
-              border: OutlineInputBorder(),
-              isDense: true,
+    return ConnectionFormShell(
+      nameController: _name,
+      nameStatus: statusFor('name'),
+      formError: formError,
+      onSave: _submit,
+      onCancel: widget.onCancel,
+      onTest: widget.onTest == null ? null : _runTest,
+      children: <Widget>[
+        AstryxFormLayout(
+          direction: AstryxFormLayoutDirection.horizontal,
+          children: <Widget>[
+            AstryxTextInput(
+              label: 'Host',
+              controller: _host,
+              status: statusFor('host'),
+              required: true,
             ),
-          ),
-          const SizedBox(height: Spacing.md),
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: TextField(
-                  controller: _host,
-                  decoration: const InputDecoration(
-                    labelText: 'Host',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: Spacing.sm),
-              Expanded(
-                child: TextField(
-                  controller: _port,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    labelText: 'Port',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: Spacing.md),
-          TextField(
-            controller: _database,
-            decoration: const InputDecoration(
-              labelText: 'Database',
-              border: OutlineInputBorder(),
-              isDense: true,
+            AstryxNumberInput(
+              label: 'Port',
+              value: _port,
+              min: 1,
+              max: 65535,
+              integerOnly: true,
+              status: statusFor('port'),
+              onChanged: (value) => setState(() => _port = value),
             ),
-          ),
-          const SizedBox(height: Spacing.md),
-          TextField(
-            controller: _username,
-            decoration: const InputDecoration(
-              labelText: 'Username',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: Spacing.md),
-          TextField(
-            controller: _password,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: Spacing.md),
-          SwitchListTile(
-            title: const Text('Use TLS'),
-            subtitle: const Text('Connect with secure transport'),
-            value: _secure,
-            contentPadding: EdgeInsets.zero,
-            onChanged: (v) => setState(() => _secure = v),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: Spacing.sm),
-            Text(_error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ],
-          const SizedBox(height: Spacing.lg),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: Spacing.sm),
-              FilledButton(onPressed: _submit, child: const Text('Save')),
-            ],
-          ),
-        ],
-      ),
+        ),
+        AstryxTextInput(label: 'Database', controller: _database),
+        AstryxFormLayout(
+          direction: AstryxFormLayoutDirection.horizontal,
+          children: <Widget>[
+            AstryxTextInput(label: 'Username', controller: _username),
+            AstryxTextInput(
+              label: 'Password',
+              controller: _password,
+              obscureText: true,
+              optional: true,
+            ),
+          ],
+        ),
+        // A checkbox, not a switch: this form has a Save button, and nothing on
+        // it takes effect until that is pressed.
+        AstryxCheckbox(
+          label: 'Connect over TLS',
+          description: 'Required by most hosted MySQL; usually off locally.',
+          value: _secure,
+          onChanged: (value) => setState(() => _secure = value),
+        ),
+      ],
     );
   }
 }

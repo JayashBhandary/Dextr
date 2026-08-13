@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../domain/connection_record.dart';
 import 'providers.dart';
@@ -35,7 +36,8 @@ class ConnectionsNotifier
   }
 }
 
-final connectionsProvider = StateNotifierProvider<ConnectionsNotifier,
-    AsyncValue<List<ConnectionRecord>>>(
-  ConnectionsNotifier.new,
-);
+final connectionsProvider =
+    StateNotifierProvider<
+      ConnectionsNotifier,
+      AsyncValue<List<ConnectionRecord>>
+    >(ConnectionsNotifier.new);

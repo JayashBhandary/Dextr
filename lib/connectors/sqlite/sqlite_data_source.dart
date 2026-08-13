@@ -3,18 +3,31 @@ import 'package:sqlite3/sqlite3.dart' hide Row;
 import '../../core/capabilities.dart';
 import '../../core/cell_value.dart';
 import '../../core/errors.dart';
+import '../../core/logger.dart';
 import '../../core/page.dart';
 import '../../core/query_spec.dart';
 import '../../domain/connection_record.dart';
+import '../../services/file_access.dart';
 import '../data_source.dart';
 import '../sql_common/sql_query_builder.dart';
 
 class SqliteDataSource extends DataSource
     with RawQueryable, Writable, SchemaReadable, SchemaMutable, Transactional {
-  SqliteDataSource({required this.record});
+  SqliteDataSource({required this.record, FileAccess? fileAccess})
+      : fileAccess = fileAccess ?? FileAccess.instance;
 
   final ConnectionRecord record;
+  final FileAccess fileAccess;
   Database? _db;
+
+  /// Set while a sandbox grant is held open, and the argument to the revoke
+  /// that has to follow it.
+  String? _accessToken;
+
+  final Map<String, Object?> _corrected = {};
+
+  @override
+  Map<String, Object?> get correctedConfig => Map.unmodifiable(_corrected);
 
   @override
   String get id => record.id;
@@ -31,12 +44,17 @@ class SqliteDataSource extends DataSource
         Capability.transactions,
       };
 
-  String get _filePath {
-    final p = record.config['filePath'];
+  String get _configuredPath {
+    final p = record.config[FileAccess.pathKey];
     if (p is! String || p.isEmpty) {
       throw const ConnectError('SQLite filePath missing');
     }
     return p;
+  }
+
+  String get _bookmark {
+    final b = record.config[FileAccess.bookmarkKey];
+    return b is String ? b : '';
   }
 
   Database get _open {
@@ -47,19 +65,70 @@ class SqliteDataSource extends DataSource
 
   @override
   Future<void> connect() async {
+    final path = await _acquirePath();
     try {
-      _db = sqlite3.open(_filePath);
+      _db = sqlite3.open(path);
       // Validate readability.
       _db!.select('SELECT 1');
     } catch (e, st) {
-      throw ConnectError('Failed to open $_filePath', cause: e, stack: st);
+      await _release();
+      // A file the sandbox would not re-grant reads as a plain open failure,
+      // which sends people looking at the file instead of at the permission.
+      final hint = _accessDenied
+          ? ' — permission to reopen it was not granted, so edit the '
+              'connection and pick the file again'
+          : '';
+      throw ConnectError('Failed to open $path$hint', cause: e, stack: st);
     }
+  }
+
+  /// Whether a stored bookmark existed but would not produce access.
+  bool _accessDenied = false;
+
+  /// Resolves the path to open, re-acquiring sandbox access first where that is
+  /// a thing. A connection saved on a previous launch has a bookmark but no
+  /// live permission; without redeeming it the open fails on macOS even though
+  /// the path is perfectly correct.
+  ///
+  /// A bookmark that will not resolve is not treated as fatal on its own: the
+  /// file may be reachable anyway — an unsandboxed build, or a path the app can
+  /// always read — and it costs nothing to let the open be the judge of that.
+  Future<String> _acquirePath() async {
+    final configured = _configuredPath;
+    final bookmark = _bookmark;
+    if (bookmark.isEmpty || !fileAccess.isSupported) return configured;
+    final grant = await fileAccess.grant(bookmark);
+    if (grant == null) {
+      log.w('SQLite ${record.name}: bookmark for $configured did not resolve');
+      _accessDenied = true;
+      return configured;
+    }
+    _accessDenied = false;
+    _accessToken = grant.token;
+    // The bookmark, not the path, is the authority on where the file lives: a
+    // moved file resolves to its new home, and the saved path is then simply
+    // wrong. Report both corrections so the record can catch up.
+    if (grant.path != configured) {
+      log.i('SQLite ${record.name}: file moved to ${grant.path}');
+      _corrected[FileAccess.pathKey] = grant.path;
+    }
+    if (grant.bookmark != null) {
+      _corrected[FileAccess.bookmarkKey] = grant.bookmark;
+    }
+    return grant.path;
+  }
+
+  Future<void> _release() async {
+    final token = _accessToken;
+    _accessToken = null;
+    await fileAccess.revoke(token);
   }
 
   @override
   Future<void> disconnect() async {
     _db?.dispose();
     _db = null;
+    await _release();
   }
 
   @override

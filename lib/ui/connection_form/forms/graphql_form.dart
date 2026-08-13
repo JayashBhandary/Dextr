@@ -1,6 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
 
-import '../../../theme/tokens.dart';
+import 'connection_form_shell.dart';
+import 'http_auth_fields.dart';
+import 'rest_form.dart' show validateOperationsJson;
 
 class GraphqlFormResult {
   const GraphqlFormResult({
@@ -16,7 +19,7 @@ class GraphqlFormResult {
 
   final String name;
   final String endpoint;
-  final String authMode;
+  final String authMode; // none | bearer | apiKey | basic
   final String? apiKeyHeader;
   final String? bearerToken;
   final String? apiKey;
@@ -25,25 +28,31 @@ class GraphqlFormResult {
 }
 
 class GraphqlForm extends StatefulWidget {
-  const GraphqlForm({super.key, required this.onSubmit, this.initial});
+  const GraphqlForm({
+    super.key,
+    required this.onSubmit,
+    required this.onCancel,
+    this.initial,
+  });
 
   final ValueChanged<GraphqlFormResult> onSubmit;
+  final VoidCallback onCancel;
   final GraphqlFormResult? initial;
 
   @override
   State<GraphqlForm> createState() => _GraphqlFormState();
 }
 
-class _GraphqlFormState extends State<GraphqlForm> {
+class _GraphqlFormState extends State<GraphqlForm>
+    with ConnectionFormValidation<GraphqlForm> {
   late final TextEditingController _name;
   late final TextEditingController _endpoint;
   late final TextEditingController _apiKeyHeader;
   late final TextEditingController _secret;
-  late final TextEditingController _ops;
-  late String _authMode;
-  String? _error;
+  late final TextEditingController _operations;
+  late HttpAuthMode _authMode;
 
-  static const _exampleOps = '''[
+  static const _exampleOperations = '''[
   {"name": "Countries",
    "query": "query { countries { code name emoji } }",
    "rowsPath": "countries"}
@@ -52,16 +61,21 @@ class _GraphqlFormState extends State<GraphqlForm> {
   @override
   void initState() {
     super.initState();
-    final i = widget.initial;
-    _name = TextEditingController(text: i?.name ?? 'My GraphQL API');
+    final initial = widget.initial;
+    _name = TextEditingController(text: initial?.name ?? 'My GraphQL API');
     _endpoint = TextEditingController(
-        text: i?.endpoint ?? 'https://countries.trevorblades.com/');
-    _apiKeyHeader =
-        TextEditingController(text: i?.apiKeyHeader ?? 'X-API-Key');
+      text: initial?.endpoint ?? 'https://countries.trevorblades.com/',
+    );
+    _apiKeyHeader = TextEditingController(
+      text: initial?.apiKeyHeader ?? 'X-API-Key',
+    );
     _secret = TextEditingController(
-        text: i?.bearerToken ?? i?.apiKey ?? i?.basicAuth ?? '');
-    _ops = TextEditingController(text: i?.operationsJson ?? _exampleOps);
-    _authMode = i?.authMode ?? 'none';
+      text: initial?.bearerToken ?? initial?.apiKey ?? initial?.basicAuth ?? '',
+    );
+    _operations = TextEditingController(
+      text: initial?.operationsJson ?? _exampleOperations,
+    );
+    _authMode = HttpAuthMode.byName(initial?.authMode);
   }
 
   @override
@@ -70,141 +84,84 @@ class _GraphqlFormState extends State<GraphqlForm> {
     _endpoint.dispose();
     _apiKeyHeader.dispose();
     _secret.dispose();
-    _ops.dispose();
+    _operations.dispose();
     super.dispose();
   }
 
   void _submit() {
     if (_name.text.trim().isEmpty) {
-      setState(() => _error = 'Name required');
+      fail('name', 'Give this connection a name.');
       return;
     }
-    if (_endpoint.text.trim().isEmpty) {
-      setState(() => _error = 'Endpoint required');
+    final url = Uri.tryParse(_endpoint.text.trim());
+    if (_endpoint.text.trim().isEmpty || url == null || !url.hasScheme) {
+      fail('endpoint', 'An endpoint URL including https:// is required.');
       return;
     }
-    String? bearer, apiKey, basic;
-    switch (_authMode) {
-      case 'bearer':
-        bearer = _secret.text;
-      case 'apiKey':
-        apiKey = _secret.text;
-      case 'basic':
-        basic = _secret.text;
+    if (_authMode != HttpAuthMode.none && _secret.text.isEmpty) {
+      fail('secret', 'This authentication mode needs a value.');
+      return;
     }
-    widget.onSubmit(GraphqlFormResult(
-      name: _name.text.trim(),
-      endpoint: _endpoint.text.trim(),
-      authMode: _authMode,
-      apiKeyHeader: _authMode == 'apiKey' ? _apiKeyHeader.text.trim() : null,
-      bearerToken: bearer,
-      apiKey: apiKey,
-      basicAuth: basic,
-      operationsJson: _ops.text,
-    ));
+    final operationsError = validateOperationsJson(_operations.text);
+    if (operationsError != null) {
+      fail('operations', operationsError);
+      return;
+    }
+    clearValidation();
+    widget.onSubmit(
+      GraphqlFormResult(
+        name: _name.text.trim(),
+        endpoint: _endpoint.text.trim(),
+        authMode: _authMode.name,
+        apiKeyHeader: _authMode == HttpAuthMode.apiKey
+            ? _apiKeyHeader.text.trim()
+            : null,
+        bearerToken: _authMode == HttpAuthMode.bearer ? _secret.text : null,
+        apiKey: _authMode == HttpAuthMode.apiKey ? _secret.text : null,
+        basicAuth: _authMode == HttpAuthMode.basic ? _secret.text : null,
+        operationsJson: _operations.text,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(Spacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(
-              labelText: 'Connection name',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: Spacing.md),
-          TextField(
-            controller: _endpoint,
-            decoration: const InputDecoration(
-              labelText: 'GraphQL endpoint',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: Spacing.md),
-          DropdownButtonFormField<String>(
-            initialValue: _authMode,
-            decoration: const InputDecoration(
-              labelText: 'Auth',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: const [
-              DropdownMenuItem(value: 'none', child: Text('none')),
-              DropdownMenuItem(value: 'bearer', child: Text('Bearer token')),
-              DropdownMenuItem(value: 'apiKey', child: Text('API key header')),
-              DropdownMenuItem(value: 'basic', child: Text('Basic (base64)')),
-            ],
-            onChanged: (v) => setState(() => _authMode = v ?? 'none'),
-          ),
-          if (_authMode == 'apiKey') ...[
-            const SizedBox(height: Spacing.md),
-            TextField(
-              controller: _apiKeyHeader,
-              decoration: const InputDecoration(
-                labelText: 'API key header name',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-          if (_authMode != 'none') ...[
-            const SizedBox(height: Spacing.md),
-            TextField(
-              controller: _secret,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: _authMode == 'basic'
-                    ? 'base64(user:pass)'
-                    : _authMode == 'bearer'
-                        ? 'Bearer token'
-                        : 'API key value',
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-          const SizedBox(height: Spacing.lg),
-          Text('Saved operations (JSON array)',
-              style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: Spacing.xs),
-          TextField(
-            controller: _ops,
-            maxLines: 10,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-              alignLabelWithHint: true,
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: Spacing.sm),
-            Text(_error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          ],
-          const SizedBox(height: Spacing.lg),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: Spacing.sm),
-              FilledButton(onPressed: _submit, child: const Text('Save')),
-            ],
-          ),
-        ],
-      ),
+    return ConnectionFormShell(
+      nameController: _name,
+      nameStatus: statusFor('name'),
+      formError: formError,
+      onSave: _submit,
+      onCancel: widget.onCancel,
+      children: <Widget>[
+        AstryxTextInput(
+          label: 'Endpoint',
+          description: 'The single URL every query is posted to.',
+          controller: _endpoint,
+          status: statusFor('endpoint'),
+          required: true,
+          placeholder: 'https://api.example.com/graphql',
+        ),
+        HttpAuthFields(
+          mode: _authMode,
+          onModeChanged: (mode) => setState(() {
+            clearValidation();
+            _authMode = mode;
+          }),
+          secret: _secret,
+          secretStatus: statusFor('secret'),
+          apiKeyHeader: _apiKeyHeader,
+        ),
+        AstryxTextArea(
+          label: 'Operations',
+          description:
+              'A JSON array. Each entry needs a name, a query, and the '
+              'rowsPath the list of rows sits at in the response.',
+          controller: _operations,
+          status: statusFor('operations'),
+          minLines: 6,
+          maxLines: 14,
+        ),
+      ],
     );
   }
 }

@@ -1,6 +1,10 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
 
-import '../../../theme/tokens.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
+
+import 'connection_form_shell.dart';
+import 'http_auth_fields.dart';
 
 class RestFormResult {
   const RestFormResult({
@@ -25,25 +29,31 @@ class RestFormResult {
 }
 
 class RestForm extends StatefulWidget {
-  const RestForm({super.key, required this.onSubmit, this.initial});
+  const RestForm({
+    super.key,
+    required this.onSubmit,
+    required this.onCancel,
+    this.initial,
+  });
 
   final ValueChanged<RestFormResult> onSubmit;
+  final VoidCallback onCancel;
   final RestFormResult? initial;
 
   @override
   State<RestForm> createState() => _RestFormState();
 }
 
-class _RestFormState extends State<RestForm> {
+class _RestFormState extends State<RestForm>
+    with ConnectionFormValidation<RestForm> {
   late final TextEditingController _name;
   late final TextEditingController _baseUrl;
   late final TextEditingController _apiKeyHeader;
   late final TextEditingController _secret;
-  late final TextEditingController _ops;
-  late String _authMode;
-  String? _error;
+  late final TextEditingController _operations;
+  late HttpAuthMode _authMode;
 
-  static const _exampleOps = '''[
+  static const _exampleOperations = '''[
   {"name": "Users",    "method": "GET",  "path": "/users"},
   {"name": "User #1",  "method": "GET",  "path": "/users/1"},
   {"name": "New user", "method": "POST", "path": "/users",
@@ -53,16 +63,21 @@ class _RestFormState extends State<RestForm> {
   @override
   void initState() {
     super.initState();
-    final i = widget.initial;
-    _name = TextEditingController(text: i?.name ?? 'My REST API');
+    final initial = widget.initial;
+    _name = TextEditingController(text: initial?.name ?? 'My REST API');
     _baseUrl = TextEditingController(
-        text: i?.baseUrl ?? 'https://jsonplaceholder.typicode.com');
-    _apiKeyHeader =
-        TextEditingController(text: i?.apiKeyHeader ?? 'X-API-Key');
+      text: initial?.baseUrl ?? 'https://jsonplaceholder.typicode.com',
+    );
+    _apiKeyHeader = TextEditingController(
+      text: initial?.apiKeyHeader ?? 'X-API-Key',
+    );
     _secret = TextEditingController(
-        text: i?.bearerToken ?? i?.apiKey ?? i?.basicAuth ?? '');
-    _ops = TextEditingController(text: i?.operationsJson ?? _exampleOps);
-    _authMode = i?.authMode ?? 'none';
+      text: initial?.bearerToken ?? initial?.apiKey ?? initial?.basicAuth ?? '',
+    );
+    _operations = TextEditingController(
+      text: initial?.operationsJson ?? _exampleOperations,
+    );
+    _authMode = HttpAuthMode.byName(initial?.authMode);
   }
 
   @override
@@ -71,143 +86,109 @@ class _RestFormState extends State<RestForm> {
     _baseUrl.dispose();
     _apiKeyHeader.dispose();
     _secret.dispose();
-    _ops.dispose();
+    _operations.dispose();
     super.dispose();
   }
 
   void _submit() {
     if (_name.text.trim().isEmpty) {
-      setState(() => _error = 'Name required');
+      fail('name', 'Give this connection a name.');
       return;
     }
-    if (_baseUrl.text.trim().isEmpty) {
-      setState(() => _error = 'Base URL required');
+    final url = Uri.tryParse(_baseUrl.text.trim());
+    if (_baseUrl.text.trim().isEmpty || url == null || !url.hasScheme) {
+      fail('baseUrl', 'A base URL including https:// is required.');
       return;
     }
-    String? bearer, apiKey, basic;
-    switch (_authMode) {
-      case 'bearer':
-        bearer = _secret.text;
-      case 'apiKey':
-        apiKey = _secret.text;
-      case 'basic':
-        basic = _secret.text;
+    if (_authMode != HttpAuthMode.none && _secret.text.isEmpty) {
+      fail('secret', 'This authentication mode needs a value.');
+      return;
     }
-    widget.onSubmit(RestFormResult(
-      name: _name.text.trim(),
-      baseUrl: _baseUrl.text.trim(),
-      authMode: _authMode,
-      apiKeyHeader: _authMode == 'apiKey' ? _apiKeyHeader.text.trim() : null,
-      bearerToken: bearer,
-      apiKey: apiKey,
-      basicAuth: basic,
-      operationsJson: _ops.text,
-    ));
+    // The operations list drives the whole object tree for this connection, so
+    // a typo here would otherwise surface as an empty rail with no explanation.
+    final operationsError = validateOperationsJson(_operations.text);
+    if (operationsError != null) {
+      fail('operations', operationsError);
+      return;
+    }
+    clearValidation();
+    widget.onSubmit(
+      RestFormResult(
+        name: _name.text.trim(),
+        baseUrl: _baseUrl.text.trim(),
+        authMode: _authMode.name,
+        apiKeyHeader: _authMode == HttpAuthMode.apiKey
+            ? _apiKeyHeader.text.trim()
+            : null,
+        bearerToken: _authMode == HttpAuthMode.bearer ? _secret.text : null,
+        apiKey: _authMode == HttpAuthMode.apiKey ? _secret.text : null,
+        basicAuth: _authMode == HttpAuthMode.basic ? _secret.text : null,
+        operationsJson: _operations.text,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(Spacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(
-              labelText: 'Connection name',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: Spacing.md),
-          TextField(
-            controller: _baseUrl,
-            decoration: const InputDecoration(
-              labelText: 'Base URL',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: Spacing.md),
-          DropdownButtonFormField<String>(
-            initialValue: _authMode,
-            decoration: const InputDecoration(
-              labelText: 'Auth',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: const [
-              DropdownMenuItem(value: 'none', child: Text('none')),
-              DropdownMenuItem(value: 'bearer', child: Text('Bearer token')),
-              DropdownMenuItem(value: 'apiKey', child: Text('API key header')),
-              DropdownMenuItem(value: 'basic', child: Text('Basic (base64)')),
-            ],
-            onChanged: (v) => setState(() => _authMode = v ?? 'none'),
-          ),
-          if (_authMode == 'apiKey') ...[
-            const SizedBox(height: Spacing.md),
-            TextField(
-              controller: _apiKeyHeader,
-              decoration: const InputDecoration(
-                labelText: 'API key header name',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-          if (_authMode != 'none') ...[
-            const SizedBox(height: Spacing.md),
-            TextField(
-              controller: _secret,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: _authMode == 'basic'
-                    ? 'base64(user:pass)'
-                    : _authMode == 'bearer'
-                        ? 'Bearer token'
-                        : 'API key value',
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-          const SizedBox(height: Spacing.lg),
-          Text('Saved operations (JSON array)',
-              style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: Spacing.xs),
-          TextField(
-            controller: _ops,
-            maxLines: 10,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-              alignLabelWithHint: true,
-              hintText:
-                  '[{"name":"Users","method":"GET","path":"/users","rowsPath":"results"}]',
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: Spacing.sm),
-            Text(_error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          ],
-          const SizedBox(height: Spacing.lg),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: Spacing.sm),
-              FilledButton(onPressed: _submit, child: const Text('Save')),
-            ],
-          ),
-        ],
-      ),
+    return ConnectionFormShell(
+      nameController: _name,
+      nameStatus: statusFor('name'),
+      formError: formError,
+      onSave: _submit,
+      onCancel: widget.onCancel,
+      // Nothing to ping: a REST connection is a base URL and a list of saved
+      // calls, and "does this host answer" is not a question this form can ask
+      // without picking one of them arbitrarily.
+      children: <Widget>[
+        AstryxTextInput(
+          label: 'Base URL',
+          description: 'Each operation path is appended to this.',
+          controller: _baseUrl,
+          status: statusFor('baseUrl'),
+          required: true,
+          placeholder: 'https://api.example.com',
+        ),
+        HttpAuthFields(
+          mode: _authMode,
+          onModeChanged: (mode) => setState(() {
+            clearValidation();
+            _authMode = mode;
+          }),
+          secret: _secret,
+          secretStatus: statusFor('secret'),
+          apiKeyHeader: _apiKeyHeader,
+        ),
+        AstryxTextArea(
+          label: 'Operations',
+          description: 'A JSON array. Each entry becomes a row in the rail.',
+          controller: _operations,
+          status: statusFor('operations'),
+          minLines: 6,
+          maxLines: 14,
+        ),
+      ],
     );
   }
+}
+
+/// Checks that an operations list is a JSON array of named objects.
+///
+/// Returns a message, or null when it is usable.
+String? validateOperationsJson(String raw) {
+  if (raw.trim().isEmpty) return 'At least one operation is needed.';
+  Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } catch (e) {
+    return 'That is not valid JSON: $e';
+  }
+  if (decoded is! List) return 'The operations have to be a JSON array.';
+  if (decoded.isEmpty) return 'At least one operation is needed.';
+  for (final (index, entry) in decoded.indexed) {
+    if (entry is! Map) return 'Operation ${index + 1} is not an object.';
+    if (entry['name'] is! String || (entry['name'] as String).trim().isEmpty) {
+      return 'Operation ${index + 1} has no "name".';
+    }
+  }
+  return null;
 }

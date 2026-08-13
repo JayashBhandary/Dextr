@@ -1,14 +1,16 @@
-import 'package:flutter/material.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../connectors/registry.dart';
 import '../../core/capabilities.dart';
 import '../../domain/connection_record.dart';
 import '../../domain/connection_secrets.dart';
+import '../../services/file_access.dart';
 import '../../state/connections_provider.dart';
 import '../../state/providers.dart';
-import '../../theme/tokens.dart';
 import 'forms/firestore_form.dart';
 import 'forms/graphql_form.dart';
 import 'forms/mongo_form.dart';
@@ -81,12 +83,117 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     if (mounted) context.go('/');
   }
 
+  // --- Test connection ------------------------------------------------------
+
+  /// Opens a throwaway data source with the given config/secrets, pings it and
+  /// tears it down. Throws (ConnectError etc.) on failure.
+  Future<void> _testRecord(
+    ConnectionRecord record,
+    ConnectionSecrets? secrets,
+  ) async {
+    final source = ConnectorRegistry.instance.create(record, secrets);
+    try {
+      await source.connect();
+      await source.ping();
+    } finally {
+      await source.dispose();
+    }
+  }
+
+  ConnectionRecord _testStub(
+    DataSourceKind kind,
+    Map<String, Object?> config,
+  ) => ConnectionRecord(
+    id: '_test',
+    name: 'test',
+    kind: kind,
+    config: config,
+    secretsRef: '_test',
+  );
+
+  Map<String, Object?> _sqliteConfig(SqliteFormResult r) => {
+    FileAccess.pathKey: r.filePath,
+    FileAccess.bookmarkKey: ?r.bookmark,
+  };
+
+  Map<String, Object?> _postgresConfig(PostgresFormResult r) => {
+    'host': r.host,
+    'port': r.port,
+    'database': r.database,
+    'username': r.username,
+    'sslMode': r.sslMode,
+  };
+
+  Map<String, Object?> _mysqlConfig(MysqlFormResult r) => {
+    'host': r.host,
+    'port': r.port,
+    'database': r.database,
+    'username': r.username,
+    'secure': r.secure,
+  };
+
+  Map<String, Object?> _mongoConfig(MongoFormResult r) => {
+    'host': r.host,
+    'port': r.port,
+    'database': r.database,
+    if (r.username.isNotEmpty) 'username': r.username,
+    'tls': r.tls,
+  };
+
+  Map<String, Object?> _firestoreConfig(FirestoreFormResult r) => {
+    'projectId': r.projectId,
+    'databaseId': r.databaseId,
+    'mode': r.mode,
+    if (r.emulatorHost != null) 'emulatorHost': r.emulatorHost,
+  };
+
+  Map<String, Object?> _s3Config(S3FormResult r) => {
+    'endpoint': r.endpoint,
+    if (r.port != null) 'port': r.port,
+    'region': r.region,
+    'useSSL': r.useSSL,
+  };
+
+  Future<void> _testSqlite(SqliteFormResult r) =>
+      _testRecord(_testStub(DataSourceKind.sqlite, _sqliteConfig(r)), null);
+
+  Future<void> _testPostgres(PostgresFormResult r) => _testRecord(
+    _testStub(DataSourceKind.postgres, _postgresConfig(r)),
+    ConnectionSecrets(password: r.password),
+  );
+
+  Future<void> _testMysql(MysqlFormResult r) => _testRecord(
+    _testStub(DataSourceKind.mysql, _mysqlConfig(r)),
+    ConnectionSecrets(password: r.password),
+  );
+
+  Future<void> _testMongo(MongoFormResult r) => _testRecord(
+    _testStub(DataSourceKind.mongo, _mongoConfig(r)),
+    ConnectionSecrets(password: r.password.isEmpty ? null : r.password),
+  );
+
+  Future<void> _testFirestore(FirestoreFormResult r) => _testRecord(
+    _testStub(DataSourceKind.firestore, _firestoreConfig(r)),
+    ConnectionSecrets(serviceAccountJson: r.serviceAccountJson),
+  );
+
+  Future<void> _testS3(S3FormResult r) => _testRecord(
+    _testStub(DataSourceKind.s3, _s3Config(r)),
+    ConnectionSecrets(
+      accessKeyId: r.accessKeyId,
+      secretAccessKey: r.secretAccessKey,
+      sessionToken: r.sessionToken,
+    ),
+  );
+
+  // --- Save -----------------------------------------------------------------
+
   Future<void> _saveSqlite(SqliteFormResult r) async {
     final record = ConnectionRecord(
       id: _recordId,
       name: r.name,
       kind: DataSourceKind.sqlite,
-      config: {'filePath': r.filePath},
+      config: _sqliteConfig(r),
       secretsRef: _secretsRefId,
     );
     await ref.read(connectionsProvider.notifier).upsert(record);
@@ -162,15 +269,12 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
       id: _recordId,
       name: r.name,
       kind: DataSourceKind.s3,
-      config: {
-        'endpoint': r.endpoint,
-        if (r.port != null) 'port': r.port,
-        'region': r.region,
-        'useSSL': r.useSSL,
-      },
+      config: _s3Config(r),
       secretsRef: secretsRef,
     );
-    await ref.read(secretsStoreProvider).write(
+    await ref
+        .read(secretsStoreProvider)
+        .write(
           secretsRef,
           ConnectionSecrets(
             accessKeyId: r.accessKeyId,
@@ -188,20 +292,14 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
       id: _recordId,
       name: r.name,
       kind: DataSourceKind.mongo,
-      config: {
-        'host': r.host,
-        'port': r.port,
-        'database': r.database,
-        if (r.username.isNotEmpty) 'username': r.username,
-        'tls': r.tls,
-      },
+      config: _mongoConfig(r),
       secretsRef: secretsRef,
     );
-    await ref.read(secretsStoreProvider).write(
+    await ref
+        .read(secretsStoreProvider)
+        .write(
           secretsRef,
-          ConnectionSecrets(
-            password: r.password.isEmpty ? null : r.password,
-          ),
+          ConnectionSecrets(password: r.password.isEmpty ? null : r.password),
         );
     await ref.read(connectionsProvider.notifier).upsert(record);
     await _afterSave();
@@ -213,15 +311,12 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
       id: _recordId,
       name: r.name,
       kind: DataSourceKind.firestore,
-      config: {
-        'projectId': r.projectId,
-        'databaseId': r.databaseId,
-        'mode': r.mode,
-        if (r.emulatorHost != null) 'emulatorHost': r.emulatorHost,
-      },
+      config: _firestoreConfig(r),
       secretsRef: secretsRef,
     );
-    await ref.read(secretsStoreProvider).write(
+    await ref
+        .read(secretsStoreProvider)
+        .write(
           secretsRef,
           ConnectionSecrets(serviceAccountJson: r.serviceAccountJson),
         );
@@ -235,13 +330,7 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
       id: _recordId,
       name: r.name,
       kind: DataSourceKind.mysql,
-      config: {
-        'host': r.host,
-        'port': r.port,
-        'database': r.database,
-        'username': r.username,
-        'secure': r.secure,
-      },
+      config: _mysqlConfig(r),
       secretsRef: secretsRef,
     );
     await ref
@@ -257,13 +346,7 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
       id: _recordId,
       name: r.name,
       kind: DataSourceKind.postgres,
-      config: {
-        'host': r.host,
-        'port': r.port,
-        'database': r.database,
-        'username': r.username,
-        'sslMode': r.sslMode,
-      },
+      config: _postgresConfig(r),
       secretsRef: secretsRef,
     );
     await ref
@@ -276,157 +359,199 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
   // --- Prefill builders (edit mode) ----------------------------------------
 
   SqliteFormResult get _initSqlite => SqliteFormResult(
-        name: widget.editing!.name,
-        filePath: _cfgStr('filePath'),
-      );
+    name: widget.editing!.name,
+    filePath: _cfgStr(FileAccess.pathKey),
+    bookmark: widget.editing!.config[FileAccess.bookmarkKey] as String?,
+  );
 
   PostgresFormResult get _initPostgres => PostgresFormResult(
-        name: widget.editing!.name,
-        host: _cfgStr('host', 'localhost'),
-        port: _cfgInt('port') ?? 5432,
-        database: _cfgStr('database', 'postgres'),
-        username: _cfgStr('username', 'postgres'),
-        password: _secrets?.password ?? '',
-        sslMode: _cfgStr('sslMode', 'require'),
-      );
+    name: widget.editing!.name,
+    host: _cfgStr('host', 'localhost'),
+    port: _cfgInt('port') ?? 5432,
+    database: _cfgStr('database', 'postgres'),
+    username: _cfgStr('username', 'postgres'),
+    password: _secrets?.password ?? '',
+    sslMode: _cfgStr('sslMode', 'require'),
+  );
 
   MysqlFormResult get _initMysql => MysqlFormResult(
-        name: widget.editing!.name,
-        host: _cfgStr('host', 'localhost'),
-        port: _cfgInt('port') ?? 3306,
-        database: _cfgStr('database', 'dextr'),
-        username: _cfgStr('username', 'root'),
-        password: _secrets?.password ?? '',
-        secure: _cfgBool('secure', false),
-      );
+    name: widget.editing!.name,
+    host: _cfgStr('host', 'localhost'),
+    port: _cfgInt('port') ?? 3306,
+    database: _cfgStr('database', 'dextr'),
+    username: _cfgStr('username', 'root'),
+    password: _secrets?.password ?? '',
+    secure: _cfgBool('secure', false),
+  );
 
   MongoFormResult get _initMongo => MongoFormResult(
-        name: widget.editing!.name,
-        host: _cfgStr('host', 'localhost'),
-        port: _cfgInt('port') ?? 27017,
-        database: _cfgStr('database', 'dextr'),
-        username: _cfgStr('username'),
-        password: _secrets?.password ?? '',
-        tls: _cfgBool('tls', false),
-      );
+    name: widget.editing!.name,
+    host: _cfgStr('host', 'localhost'),
+    port: _cfgInt('port') ?? 27017,
+    database: _cfgStr('database', 'dextr'),
+    username: _cfgStr('username'),
+    password: _secrets?.password ?? '',
+    tls: _cfgBool('tls', false),
+  );
 
   FirestoreFormResult get _initFirestore => FirestoreFormResult(
-        name: widget.editing!.name,
-        projectId: _cfgStr('projectId'),
-        databaseId: _cfgStr('databaseId', '(default)'),
-        mode: _cfgStr('mode', 'serviceAccount'),
-        emulatorHost: widget.editing!.config['emulatorHost'] as String?,
-        serviceAccountJson: _secrets?.serviceAccountJson,
-      );
+    name: widget.editing!.name,
+    projectId: _cfgStr('projectId'),
+    databaseId: _cfgStr('databaseId', '(default)'),
+    mode: _cfgStr('mode', 'serviceAccount'),
+    emulatorHost: widget.editing!.config['emulatorHost'] as String?,
+    serviceAccountJson: _secrets?.serviceAccountJson,
+  );
 
   S3FormResult get _initS3 => S3FormResult(
-        name: widget.editing!.name,
-        endpoint: _cfgStr('endpoint', 's3.amazonaws.com'),
-        port: _cfgInt('port'),
-        region: _cfgStr('region', 'us-east-1'),
-        useSSL: _cfgBool('useSSL', false),
-        accessKeyId: _secrets?.accessKeyId ?? '',
-        secretAccessKey: _secrets?.secretAccessKey ?? '',
-        sessionToken: _secrets?.sessionToken,
-      );
+    name: widget.editing!.name,
+    endpoint: _cfgStr('endpoint', 's3.amazonaws.com'),
+    port: _cfgInt('port'),
+    region: _cfgStr('region', 'us-east-1'),
+    useSSL: _cfgBool('useSSL', false),
+    accessKeyId: _secrets?.accessKeyId ?? '',
+    secretAccessKey: _secrets?.secretAccessKey ?? '',
+    sessionToken: _secrets?.sessionToken,
+  );
 
   RestFormResult get _initRest => RestFormResult(
-        name: widget.editing!.name,
-        baseUrl: _cfgStr('baseUrl'),
-        authMode: _cfgStr('authMode', 'none'),
-        apiKeyHeader: widget.editing!.config['apiKeyHeader'] as String?,
-        bearerToken: _secrets?.bearerToken,
-        apiKey: _secrets?.apiKey,
-        basicAuth: _secrets?.basicAuth,
-        operationsJson: _cfgStr('operations'),
-      );
+    name: widget.editing!.name,
+    baseUrl: _cfgStr('baseUrl'),
+    authMode: _cfgStr('authMode', 'none'),
+    apiKeyHeader: widget.editing!.config['apiKeyHeader'] as String?,
+    bearerToken: _secrets?.bearerToken,
+    apiKey: _secrets?.apiKey,
+    basicAuth: _secrets?.basicAuth,
+    operationsJson: _cfgStr('operations'),
+  );
 
   GraphqlFormResult get _initGraphql => GraphqlFormResult(
-        name: widget.editing!.name,
-        endpoint: _cfgStr('endpoint'),
-        authMode: _cfgStr('authMode', 'none'),
-        apiKeyHeader: widget.editing!.config['apiKeyHeader'] as String?,
-        bearerToken: _secrets?.bearerToken,
-        apiKey: _secrets?.apiKey,
-        basicAuth: _secrets?.basicAuth,
-        operationsJson: _cfgStr('operations'),
-      );
+    name: widget.editing!.name,
+    endpoint: _cfgStr('endpoint'),
+    authMode: _cfgStr('authMode', 'none'),
+    apiKeyHeader: widget.editing!.config['apiKeyHeader'] as String?,
+    bearerToken: _secrets?.bearerToken,
+    apiKey: _secrets?.apiKey,
+    basicAuth: _secrets?.basicAuth,
+    operationsJson: _cfgStr('operations'),
+  );
+
+  void _cancel() => context.go('/');
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEdit ? 'Edit connection' : 'New connection'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => context.go('/'),
-        ),
+    return AstryxLayout(
+      // A form is a single column of prose-width fields: one running the width
+      // of a monitor is unreadable.
+      maxContentWidth: 720,
+      header: AstryxHStack(
+        gap: AstryxSpacingToken.spacing3,
+        mainAxisSize: MainAxisSize.max,
+        children: <Widget>[
+          // Expanded rather than Flexible plus a Spacer: the two would share
+          // the free space and leave the close button mid-row.
+          Expanded(
+            child: AstryxHeading(
+              _isEdit ? 'Edit connection' : 'New connection',
+              level: 1,
+            ),
+          ),
+          AstryxIconButton(
+            icon: AstryxIconName.close,
+            label: 'Close without saving',
+            tooltip: 'Close',
+            variant: AstryxButtonVariant.ghost,
+            onPressed: _cancel,
+          ),
+        ],
       ),
-      body: _loadingSecrets
-          ? const Center(child: CircularProgressIndicator())
-          : ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: ListView(
-                padding: const EdgeInsets.all(Spacing.lg),
-                children: [
-                  Text('Backend kind', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: Spacing.sm),
-                  // Kind is immutable once a connection exists — editing it
-                  // would invalidate the stored config shape.
-                  IgnorePointer(
-                    ignoring: _isEdit,
-                    child: Opacity(
-                      opacity: _isEdit ? 0.6 : 1,
-                      child: KindPicker(
-                        selected: _kind,
-                        onChanged: (k) => setState(() => _kind = k),
-                      ),
-                    ),
+      child: _loadingSecrets
+          ? const AstryxCenter(
+              minHeight: 240,
+              child: AstryxSpinner(label: 'Reading the stored credentials'),
+            )
+          : AstryxVStack(
+              gap: AstryxSpacingToken.spacing6,
+              align: AstryxStackAlign.stretch,
+              children: <Widget>[
+                AstryxSection(
+                  title: 'Backend',
+                  description: _isEdit
+                      ? 'Fixed once a connection exists: its stored settings '
+                            'have the shape this backend expects.'
+                      : 'What this connection talks to.',
+                  child: _isEdit
+                      ? AstryxHStack(
+                          children: <Widget>[
+                            AstryxBadge(
+                              _kind.label,
+                              variant: AstryxBadgeVariant.info,
+                            ),
+                          ],
+                        )
+                      : KindPicker(
+                          selected: _kind,
+                          onChanged: (kind) => setState(() => _kind = kind),
+                        ),
+                ),
+                AstryxSection(
+                  title: 'Configuration',
+                  child: AstryxCard(
+                    padding: AstryxSpacingToken.spacing5,
+                    child: _formFor(_kind),
                   ),
-                  const SizedBox(height: Spacing.xl),
-                  Text('Configuration', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: Spacing.sm),
-                  Card(
-                    margin: EdgeInsets.zero,
-                    child: switch (_kind) {
-                      DataSourceKind.sqlite => SqliteForm(
-                          onSubmit: _saveSqlite,
-                          initial: _isEdit ? _initSqlite : null,
-                        ),
-                      DataSourceKind.postgres => PostgresForm(
-                          onSubmit: _savePostgres,
-                          initial: _isEdit ? _initPostgres : null,
-                        ),
-                      DataSourceKind.mysql => MysqlForm(
-                          onSubmit: _saveMysql,
-                          initial: _isEdit ? _initMysql : null,
-                        ),
-                      DataSourceKind.firestore => FirestoreForm(
-                          onSubmit: _saveFirestore,
-                          initial: _isEdit ? _initFirestore : null,
-                        ),
-                      DataSourceKind.mongo => MongoForm(
-                          onSubmit: _saveMongo,
-                          initial: _isEdit ? _initMongo : null,
-                        ),
-                      DataSourceKind.s3 => S3Form(
-                          onSubmit: _saveS3,
-                          initial: _isEdit ? _initS3 : null,
-                        ),
-                      DataSourceKind.rest => RestForm(
-                          onSubmit: _saveRest,
-                          initial: _isEdit ? _initRest : null,
-                        ),
-                      DataSourceKind.graphql => GraphqlForm(
-                          onSubmit: _saveGraphql,
-                          initial: _isEdit ? _initGraphql : null,
-                        ),
-                    },
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
     );
   }
+
+  Widget _formFor(DataSourceKind kind) => switch (kind) {
+    DataSourceKind.sqlite => SqliteForm(
+      onSubmit: _saveSqlite,
+      onTest: _testSqlite,
+      onCancel: _cancel,
+      initial: _isEdit ? _initSqlite : null,
+    ),
+    DataSourceKind.postgres => PostgresForm(
+      onSubmit: _savePostgres,
+      onTest: _testPostgres,
+      onCancel: _cancel,
+      initial: _isEdit ? _initPostgres : null,
+    ),
+    DataSourceKind.mysql => MysqlForm(
+      onSubmit: _saveMysql,
+      onTest: _testMysql,
+      onCancel: _cancel,
+      initial: _isEdit ? _initMysql : null,
+    ),
+    DataSourceKind.firestore => FirestoreForm(
+      onSubmit: _saveFirestore,
+      onTest: _testFirestore,
+      onCancel: _cancel,
+      initial: _isEdit ? _initFirestore : null,
+    ),
+    DataSourceKind.mongo => MongoForm(
+      onSubmit: _saveMongo,
+      onTest: _testMongo,
+      onCancel: _cancel,
+      initial: _isEdit ? _initMongo : null,
+    ),
+    DataSourceKind.s3 => S3Form(
+      onSubmit: _saveS3,
+      onTest: _testS3,
+      onCancel: _cancel,
+      initial: _isEdit ? _initS3 : null,
+    ),
+    DataSourceKind.rest => RestForm(
+      onSubmit: _saveRest,
+      onCancel: _cancel,
+      initial: _isEdit ? _initRest : null,
+    ),
+    DataSourceKind.graphql => GraphqlForm(
+      onSubmit: _saveGraphql,
+      onCancel: _cancel,
+      initial: _isEdit ? _initGraphql : null,
+    ),
+  };
 }

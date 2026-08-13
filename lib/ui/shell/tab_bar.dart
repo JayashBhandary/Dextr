@@ -1,107 +1,86 @@
-import 'package:flutter/material.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../state/active_source_provider.dart';
 import '../../state/workspace_provider.dart';
-import '../../theme/tokens.dart';
+import '../widgets/dextr_icons.dart';
+import '../widgets/dextr_more_menu.dart';
 
+/// The strip of open objects across the top of the workspace.
+///
+/// The tabs carry no close button of their own: `AstryxTab` is a value in a
+/// strip, not a container for another control, and a button inside a tab is a
+/// second interactive element inside one tab stop. Closing lives on ⌘/Ctrl+W
+/// and in the menu at the end of the strip, where it is still visible and still
+/// reachable from the keyboard.
 class WorkspaceTabBar extends ConsumerWidget {
   const WorkspaceTabBar({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final ws = ref.watch(workspaceProvider);
+    final workspace = ref.watch(workspaceProvider);
     final notifier = ref.read(workspaceProvider.notifier);
-    return SizedBox(
-      height: 40,
-      child: Material(
-        color: theme.colorScheme.surfaceContainerLowest,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Spacing.xs),
-          child: Row(
-            children: [
-              Expanded(
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final t in ws.tabs)
-                      _Tab(
-                        label: t.label(),
-                        active: t.id == ws.activeTabId,
-                        onTap: () => notifier.activate(t.id),
-                        onClose: () => notifier.closeTab(t.id),
-                      ),
+    final activeConnectionId = ref.watch(activeConnectionIdProvider);
+    final tabs = workspace.tabs;
+
+    return AstryxHStack(
+      gap: AstryxSpacingToken.spacing2,
+      mainAxisSize: MainAxisSize.max,
+      children: <Widget>[
+        Expanded(
+          child: tabs.isEmpty
+              ? const AstryxText(
+                  'No objects open',
+                  type: AstryxTextType.supporting,
+                  color: AstryxTextColor.secondary,
+                )
+              : AstryxTabList<String>(
+                  label: 'Open objects',
+                  size: AstryxTabSize.sm,
+                  showDivider: false,
+                  value: workspace.activeTabId,
+                  onChanged: notifier.activate,
+                  tabs: <AstryxTab<String>>[
+                    for (final tab in tabs)
+                      AstryxTab<String>(value: tab.id, label: tab.label()),
                   ],
                 ),
-              ),
-              IconButton(
-                tooltip: 'Settings',
-                iconSize: 18,
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () {},
-              ),
-            ],
-          ),
         ),
-      ),
-    );
-  }
-}
-
-class _Tab extends StatelessWidget {
-  const _Tab({
-    required this.label,
-    required this.active,
-    required this.onTap,
-    required this.onClose,
-  });
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Spacing.xs, vertical: 4),
-      child: Material(
-        color: active
-            ? theme.colorScheme.primaryContainer
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(Radii.sm),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(Radii.sm),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
-            child: Row(
-              children: [
-                Text(label,
-                    style: TextStyle(
-                      color: active
-                          ? theme.colorScheme.onPrimaryContainer
-                          : theme.colorScheme.onSurface,
-                      fontWeight:
-                          active ? FontWeight.w600 : FontWeight.w400,
-                    )),
-                const SizedBox(width: Spacing.xs),
-                Tooltip(
-                  message: 'Close · Ctrl/⌘+W',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(Radii.sm),
-                    onTap: onClose,
-                    child: const Padding(
-                      padding: EdgeInsets.all(2),
-                      child: Icon(Icons.close, size: 14),
-                    ),
-                  ),
-                ),
-              ],
+        if (activeConnectionId != null)
+          AstryxIconButton.custom(
+            label: 'New query tab',
+            tooltip: 'New query tab',
+            variant: AstryxButtonVariant.ghost,
+            size: AstryxButtonSize.sm,
+            onPressed: () => notifier.openQueryTab(activeConnectionId),
+            child: const Icon(DextrIcons.terminal),
+          ),
+        DextrMoreMenu(
+          label: 'Tab actions',
+          entries: <AstryxMenuEntry>[
+            AstryxMenuItem(
+              label: 'Close tab',
+              trailing: const AstryxKbd.chord(<String>[
+                '⌘',
+                'W',
+              ], semanticsLabel: 'Command W'),
+              enabled: workspace.activeTabId != null,
+              onSelected: notifier.closeActiveTab,
             ),
-          ),
+            AstryxMenuItem(
+              label: 'Close all tabs',
+              trailing: const AstryxKbd.chord(<String>[
+                '⌘',
+                '⌥',
+                'W',
+              ], semanticsLabel: 'Command Option W'),
+              enabled: tabs.isNotEmpty,
+              onSelected: notifier.closeAllTabs,
+            ),
+          ],
         ),
-      ),
+      ],
     );
   }
 }

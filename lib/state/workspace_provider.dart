@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
 
 import '../connectors/data_source.dart';
@@ -9,11 +9,10 @@ class WorkspaceState {
   final List<WorkspaceTab> tabs;
   final String? activeTabId;
 
-  WorkspaceTab? get activeTab =>
-      tabs.cast<WorkspaceTab?>().firstWhere(
-            (t) => t?.id == activeTabId,
-            orElse: () => null,
-          );
+  WorkspaceTab? get activeTab => tabs.cast<WorkspaceTab?>().firstWhere(
+    (t) => t?.id == activeTabId,
+    orElse: () => null,
+  );
 
   WorkspaceState copyWith({List<WorkspaceTab>? tabs, String? activeTabId}) =>
       WorkspaceState(
@@ -29,12 +28,12 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
 
   String openBrowseTab(String connectionId, ContainerRef container) {
     final existing = state.tabs.cast<WorkspaceTab?>().firstWhere(
-          (t) =>
-              t?.connectionId == connectionId &&
-              t?.view == WorkspaceView.browse &&
-              t?.container?.name == container.name,
-          orElse: () => null,
-        );
+      (t) =>
+          t?.connectionId == connectionId &&
+          t?.view == WorkspaceView.browse &&
+          t?.container?.name == container.name,
+      orElse: () => null,
+    );
     if (existing != null) {
       state = state.copyWith(activeTabId: existing.id);
       return existing.id;
@@ -45,10 +44,7 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
       view: WorkspaceView.browse,
       container: container,
     );
-    state = state.copyWith(
-      tabs: [...state.tabs, tab],
-      activeTabId: tab.id,
-    );
+    state = state.copyWith(tabs: [...state.tabs, tab], activeTabId: tab.id);
     return tab.id;
   }
 
@@ -58,10 +54,7 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
       connectionId: connectionId,
       view: WorkspaceView.query,
     );
-    state = state.copyWith(
-      tabs: [...state.tabs, tab],
-      activeTabId: tab.id,
-    );
+    state = state.copyWith(tabs: [...state.tabs, tab], activeTabId: tab.id);
     return tab.id;
   }
 
@@ -72,10 +65,7 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
       view: WorkspaceView.schema,
       container: container,
     );
-    state = state.copyWith(
-      tabs: [...state.tabs, tab],
-      activeTabId: tab.id,
-    );
+    state = state.copyWith(tabs: [...state.tabs, tab], activeTabId: tab.id);
     return tab.id;
   }
 
@@ -96,7 +86,38 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
     state = const WorkspaceState();
   }
 
+  /// Closes every tab belonging to one connection, for when it is disconnected
+  /// or deleted: a tab onto a source that is gone can only fail.
+  void closeTabsFor(String connectionId) {
+    final remaining = state.tabs
+        .where((t) => t.connectionId != connectionId)
+        .toList();
+    final active = state.activeTabId;
+    final keepsActive = remaining.any((t) => t.id == active);
+    state = WorkspaceState(
+      tabs: remaining,
+      activeTabId: keepsActive
+          ? active
+          : (remaining.isEmpty ? null : remaining.last.id),
+    );
+  }
+
   void activate(String tabId) => state = state.copyWith(activeTabId: tabId);
+
+  /// Switches what the tab shows without opening another one.
+  ///
+  /// The view is a property of the tab, not a tab of its own: the header's
+  /// Browse / Query / Schema control switches between three views *of one
+  /// object*, and a new tab per view would leave the strip full of duplicates
+  /// of the same table.
+  void setView(String tabId, WorkspaceView view) {
+    final updated = state.tabs.map((t) {
+      if (t.id != tabId) return t;
+      t.view = view;
+      return t;
+    }).toList();
+    state = state.copyWith(tabs: updated);
+  }
 
   void updateQueryText(String tabId, String text) {
     final updated = state.tabs.map((t) {
@@ -110,5 +131,5 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
 
 final workspaceProvider =
     StateNotifierProvider<WorkspaceNotifier, WorkspaceState>(
-  (ref) => WorkspaceNotifier(),
-);
+      (ref) => WorkspaceNotifier(),
+    );

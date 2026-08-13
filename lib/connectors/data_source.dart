@@ -79,6 +79,11 @@ abstract class DataSource {
   Future<void> ping();
   Future<void> dispose();
 
+  /// Config that [connect] found to be out of date and that the saved record
+  /// should adopt — a sandbox bookmark reissued for a file that moved, say.
+  /// Empty for sources with nothing to correct, which is most of them.
+  Map<String, Object?> get correctedConfig => const {};
+
   Future<List<ContainerRef>> listContainers();
   Future<Page<RowData>> listRows(ContainerRef container, QuerySpec spec);
   Future<RowData?> getRow(ContainerRef container, RowId id);

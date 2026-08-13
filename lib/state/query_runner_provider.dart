@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../connectors/data_source.dart';
 import '../core/errors.dart';
@@ -38,5 +39,5 @@ class QueryRunnerNotifier extends StateNotifier<QueryExecution> {
 
 final queryRunnerProvider =
     StateNotifierProvider.autoDispose<QueryRunnerNotifier, QueryExecution>(
-  QueryRunnerNotifier.new,
-);
+      QueryRunnerNotifier.new,
+    );

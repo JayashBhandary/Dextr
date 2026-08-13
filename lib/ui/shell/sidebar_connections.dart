@@ -1,150 +1,222 @@
-import 'package:flutter/material.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../connectors/data_source.dart';
 import '../../domain/connection_record.dart';
 import '../../state/active_source_provider.dart';
 import '../../state/connections_provider.dart';
-import '../../state/providers.dart';
-import '../../theme/tokens.dart';
+import '../../state/settings_provider.dart';
+import '../../state/workspace_provider.dart';
+import '../widgets/dextr_icons.dart';
+import 'window_frame.dart';
 
-class SidebarConnections extends ConsumerWidget {
-  const SidebarConnections({super.key});
+/// Row ids the rail reports back. A rail reports one string, so the two kinds
+/// of row are told apart by a prefix rather than by two callbacks.
+const _connectionPrefix = 'connection:';
+const _containerPrefix = 'container:';
+
+/// The connections rail: every connection, and the objects inside the open one.
+///
+/// One tree rather than a list of connections beside a list of objects. A
+/// connection and its tables are one hierarchy, and splitting them across two
+/// panels made the reader hold the relationship in their head.
+class ConnectionsRail extends ConsumerWidget {
+  const ConnectionsRail({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final conns = ref.watch(connectionsProvider);
+    final connections = ref.watch(connectionsProvider);
     final activeId = ref.watch(activeConnectionIdProvider);
+    final containers = ref.watch(activeContainersProvider);
+    final workspace = ref.watch(workspaceProvider);
+    final density = ref.watch(settingsProvider).itemDensity;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-              Spacing.lg, Spacing.lg, Spacing.sm, Spacing.sm),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Image.asset(
-                  'assets/icon/icon.png',
-                  width: 24,
-                  height: 24,
-                  filterQuality: FilterQuality.medium,
-                ),
-              ),
-              const SizedBox(width: Spacing.sm),
-              Expanded(
-                child: Text('Dextr',
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w700)),
-              ),
-              IconButton(
-                tooltip: 'New connection',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.add_rounded),
-                onPressed: () => context.go('/connection/new'),
-              ),
-              IconButton(
-                tooltip: 'Settings',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => context.go('/settings'),
-              ),
-            ],
+    // The rail marks the object being looked at, falling back to the
+    // connection when no object is open — so something is always current.
+    final activeContainer = workspace.activeTab?.container?.name;
+    final selectedId = activeId == null
+        ? null
+        : activeContainer == null
+        ? '$_connectionPrefix$activeId'
+        : '$_containerPrefix$activeId/$activeContainer';
+
+    // The shell fills the rail only in the drawer layout, so the wide one has
+    // to fill it here — otherwise the rail is the same surface as the content
+    // beside it and only the divider says where one ends.
+    return ColoredBox(
+      color: AstryxTheme.of(context).color(AstryxColorToken.backgroundSurface),
+      // The colour runs to the top of the window and the rows start below the
+      // window's buttons. Padding inside the fill rather than outside it is the
+      // whole point: a rail that stopped where its first row starts would leave
+      // the window's own colour showing above it.
+      child: Padding(
+        padding: EdgeInsets.only(top: WindowCaptionScope.insetOf(context)),
+        child: _nav(
+          context,
+          ref,
+          density,
+          selectedId,
+          connections,
+          activeId,
+          containers,
+        ),
+      ),
+    );
+  }
+
+  Widget _nav(
+    BuildContext context,
+    WidgetRef ref,
+    AstryxItemDensity density,
+    String? selectedId,
+    AsyncValue<List<ConnectionRecord>> connections,
+    String? activeId,
+    AsyncValue<List<ContainerRef>> containers,
+  ) {
+    return AstryxSideNav(
+      label: 'Connections',
+      density: density,
+      selectedId: selectedId,
+      onSelected: (id) => _onSelected(context, ref, id),
+      footer: const _RailFooter(),
+      entries: <AstryxNavEntry>[
+        // The heading is a section with nothing in it, and the connections are
+        // top-level entries after it. A rail only indents `children` for a
+        // top-level item — an item nested inside a section has its children
+        // dropped — so the objects inside a connection would never appear if
+        // the connections lived in the section's `items`.
+        AstryxNavSection(
+          label: 'Connections',
+          trailing: AstryxIconButton.custom(
+            label: 'Settings',
+            tooltip: 'Settings',
+            variant: AstryxButtonVariant.ghost,
+            size: AstryxButtonSize.sm,
+            onPressed: () => context.go('/settings'),
+            child: const Icon(DextrIcons.settings),
           ),
         ),
-        const Divider(height: 1),
-        Expanded(
-          child: conns.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(Spacing.md),
-                child: Text('Failed to load:\n$e',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: theme.colorScheme.error)),
-              ),
-            ),
-            data: (list) {
-              if (list.isEmpty) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(Spacing.lg),
-                    child: Text(
-                      'No connections yet.\nTap + to add one.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.outline),
-                    ),
-                  ),
-                );
-              }
-              return ListView.builder(
-                itemCount: list.length,
-                itemBuilder: (_, i) {
-                  final c = list[i];
-                  return _ConnectionTile(record: c, active: c.id == activeId);
-                },
-              );
-            },
-          ),
-        ),
+        ..._connectionEntries(connections, activeId, containers),
       ],
     );
   }
+
+  /// One row per connection, with the open one's objects indented under it.
+  ///
+  /// A disabled row rather than nothing while loading or on failure: the rail is
+  /// where a connection is expected to be, so it is where the reason it is not
+  /// there belongs.
+  List<AstryxNavEntry> _connectionEntries(
+    AsyncValue<List<ConnectionRecord>> connections,
+    String? activeId,
+    AsyncValue<List<ContainerRef>> containers,
+  ) {
+    return switch (connections) {
+      AsyncError(:final error) => <AstryxNavEntry>[
+        AstryxNavItem(
+          id: 'connections-error',
+          label: 'Could not load connections',
+          description: '$error',
+          enabled: false,
+        ),
+      ],
+      AsyncData(value: final records) when records.isEmpty =>
+        const <AstryxNavEntry>[
+          AstryxNavItem(
+            id: 'connections-empty',
+            label: 'Nothing here yet',
+            description: 'Add one below',
+            enabled: false,
+          ),
+        ],
+      AsyncData(value: final records) => <AstryxNavEntry>[
+        for (final record in records)
+          _itemFor(
+            record: record,
+            open: record.id == activeId,
+            containers: record.id == activeId
+                ? containers.value ?? const <ContainerRef>[]
+                : const <ContainerRef>[],
+            loadingContainers: record.id == activeId && containers.isLoading,
+          ),
+      ],
+      _ => const <AstryxNavEntry>[
+        AstryxNavItem(
+          id: 'connections-loading',
+          label: 'Loading…',
+          enabled: false,
+        ),
+      ],
+    };
+  }
+
+  AstryxNavItem _itemFor({
+    required ConnectionRecord record,
+    required bool open,
+    required List<ContainerRef> containers,
+    required bool loadingContainers,
+  }) {
+    return AstryxNavItem(
+      id: '$_connectionPrefix${record.id}',
+      label: record.name,
+      description: record.kind.label,
+      icon: AstryxNavIcon(
+        Icon(DextrIcons.forKind(record.kind)),
+        selected: open,
+      ),
+      children: <AstryxNavItem>[
+        if (loadingContainers)
+          const AstryxNavItem(id: 'loading', label: 'Loading…', enabled: false),
+        for (final container in containers)
+          AstryxNavItem(
+            id: '$_containerPrefix${record.id}/${container.name}',
+            label: container.name,
+            icon: AstryxNavIcon(Icon(DextrIcons.forContainer(container))),
+          ),
+      ],
+    );
+  }
+
+  void _onSelected(BuildContext context, WidgetRef ref, String id) {
+    if (id.startsWith(_connectionPrefix)) {
+      final connectionId = id.substring(_connectionPrefix.length);
+      ref.read(activeConnectionIdProvider.notifier).state = connectionId;
+      return;
+    }
+    if (!id.startsWith(_containerPrefix)) return;
+
+    // "container:<connectionId>/<name>" — a container name may itself contain
+    // a slash, so only the first one separates the two halves.
+    final rest = id.substring(_containerPrefix.length);
+    final split = rest.indexOf('/');
+    if (split < 0) return;
+    final connectionId = rest.substring(0, split);
+    final name = rest.substring(split + 1);
+
+    final container =
+        (ref.read(activeContainersProvider).value ?? const <ContainerRef>[])
+            .cast<ContainerRef?>()
+            .firstWhere((c) => c?.name == name, orElse: () => null);
+    if (container == null) return;
+    ref.read(workspaceProvider.notifier).openBrowseTab(connectionId, container);
+  }
 }
 
-class _ConnectionTile extends ConsumerWidget {
-  const _ConnectionTile({required this.record, required this.active});
-  final ConnectionRecord record;
-  final bool active;
+/// Pinned below the rows: the one action an empty rail needs.
+class _RailFooter extends ConsumerWidget {
+  const _RailFooter();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListTile(
-      dense: true,
-      selected: active,
-      leading: const Icon(Icons.storage, size: 18),
-      title: Text(record.name, overflow: TextOverflow.ellipsis),
-      subtitle: Text(record.kind.label,
-          style: Theme.of(context).textTheme.bodySmall),
-      onTap: () {
-        ref.read(activeConnectionIdProvider.notifier).state = record.id;
-      },
-      trailing: PopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert, size: 18),
-        onSelected: (v) async {
-          switch (v) {
-            case 'edit':
-              context.go('/connection/edit', extra: record);
-            case 'close':
-              await ref
-                  .read(connectionManagerProvider)
-                  .close(record.id);
-              if (ref.read(activeConnectionIdProvider) == record.id) {
-                ref.read(activeConnectionIdProvider.notifier).state = null;
-              }
-            case 'delete':
-              await ref
-                  .read(connectionManagerProvider)
-                  .close(record.id);
-              await ref
-                  .read(connectionsProvider.notifier)
-                  .remove(record.id);
-              if (ref.read(activeConnectionIdProvider) == record.id) {
-                ref.read(activeConnectionIdProvider.notifier).state = null;
-              }
-          }
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'edit', child: Text('Edit')),
-          PopupMenuItem(value: 'close', child: Text('Disconnect')),
-          PopupMenuItem(value: 'delete', child: Text('Delete')),
-        ],
-      ),
+    return AstryxButton(
+      label: 'New connection',
+      variant: AstryxButtonVariant.secondary,
+      size: AstryxButtonSize.sm,
+      width: double.infinity,
+      leading: const Icon(DextrIcons.newConnection),
+      onPressed: () => context.go('/connection/new'),
     );
   }
 }

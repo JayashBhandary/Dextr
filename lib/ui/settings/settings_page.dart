@@ -1,26 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../state/settings_provider.dart';
 import '../../theme/app_theme.dart';
-import '../../theme/tokens.dart';
 
-/// Preset accent colors offered in the picker.
-const _accents = <(String, int)>[
-  ('Indigo', 0xFF3D5AFE),
-  ('Blue', 0xFF1E88E5),
-  ('Teal', 0xFF00897B),
-  ('Green', 0xFF43A047),
-  ('Amber', 0xFFFFB300),
-  ('Orange', 0xFFFB8C00),
-  ('Red', 0xFFE53935),
-  ('Pink', 0xFFD81B60),
-  ('Purple', 0xFF8E24AA),
-  ('Slate', 0xFF546E7A),
-];
-
-const _pageSizes = [25, 50, 100, 200, 500];
+const _pageSizes = <int>[25, 50, 100, 200, 500];
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -29,169 +15,299 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
-    final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => context.go('/'),
-        ),
+    return AstryxLayout(
+      maxContentWidth: 720,
+      header: AstryxHStack(
+        gap: AstryxSpacingToken.spacing3,
+        mainAxisSize: MainAxisSize.max,
+        children: <Widget>[
+          // Expanded, not Flexible beside a Spacer: two flex children with the
+          // same factor split the free space between them, so the spacer only
+          // ever gets half of it and the close button stops short of the edge.
+          const Expanded(child: AstryxHeading('Settings', level: 1)),
+          AstryxIconButton(
+            icon: AstryxIconName.close,
+            label: 'Close settings',
+            tooltip: 'Close',
+            variant: AstryxButtonVariant.ghost,
+            onPressed: () => context.go('/'),
+          ),
+        ],
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: ListView(
-            padding: const EdgeInsets.all(Spacing.lg),
-            children: [
-              _section(theme, 'Appearance'),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Theme'),
-                subtitle: const Text('System follows your OS setting'),
-                trailing: SegmentedButton<ThemeMode>(
-                  segments: const [
-                    ButtonSegment(
-                        value: ThemeMode.system,
-                        icon: Icon(Icons.brightness_auto),
-                        label: Text('System')),
-                    ButtonSegment(
-                        value: ThemeMode.light,
-                        icon: Icon(Icons.light_mode),
-                        label: Text('Light')),
-                    ButtonSegment(
-                        value: ThemeMode.dark,
-                        icon: Icon(Icons.dark_mode),
-                        label: Text('Dark')),
+      child: AstryxVStack(
+        gap: AstryxSpacingToken.spacing6,
+        align: AstryxStackAlign.stretch,
+        children: <Widget>[
+          AstryxSection(
+            title: 'Appearance',
+            description:
+                'Every colour, size and radius in the app resolves '
+                'through the theme you pick here.',
+            showDivider: true,
+            child: AstryxVStack(
+              gap: AstryxSpacingToken.spacing5,
+              align: AstryxStackAlign.stretch,
+              children: <Widget>[
+                AstryxSelector<DextrTheme>(
+                  label: 'Theme',
+                  value: settings.theme,
+                  onChanged: (theme) =>
+                      notifier.setTheme(theme ?? DextrTheme.neutral),
+                  options: <AstryxSelectorEntry<DextrTheme>>[
+                    for (final theme in DextrTheme.values)
+                      AstryxSelectorOption<DextrTheme>(
+                        value: theme,
+                        label: theme.label,
+                        description: theme.description,
+                      ),
                   ],
-                  selected: {settings.themeMode},
-                  showSelectedIcon: false,
-                  onSelectionChanged: (s) => notifier.setThemeMode(s.first),
                 ),
-              ),
-              const SizedBox(height: Spacing.md),
-              Text('Accent color', style: theme.textTheme.bodyMedium),
-              const SizedBox(height: Spacing.sm),
-              Wrap(
-                spacing: Spacing.sm,
-                runSpacing: Spacing.sm,
-                children: [
-                  for (final (name, argb) in _accents)
-                    _Swatch(
-                      name: name,
-                      color: Color(argb),
-                      selected: settings.seedColor == argb,
-                      onTap: () => notifier.setSeedColor(argb),
-                    ),
-                ],
-              ),
-              const SizedBox(height: Spacing.sm),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Compact density'),
-                subtitle: const Text('Tighter spacing for dense screens'),
-                value: settings.compactDensity,
-                onChanged: notifier.setCompactDensity,
-              ),
-              const Divider(height: Spacing.xl),
-              _section(theme, 'Data'),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Rows per page'),
-                subtitle: const Text('Default page size when browsing tables'),
-                trailing: DropdownButton<int>(
+                _AccentPicker(
+                  selected: settings.seedColor,
+                  onChanged: notifier.setSeedColor,
+                ),
+                // Nothing on this page has a Save button behind it: every
+                // control here applies the moment it changes, which is why the
+                // one boolean below is a switch rather than a checkbox.
+                //
+                // A segmented control's own `label` is its accessible name and
+                // is never painted, so the two below would sit unlabelled among
+                // fields that all carry one. The field paints the words and
+                // leaves the announcing to the control.
+                AstryxField(
+                  label: 'Colour mode',
+                  child: AstryxSegmentedControl<AstryxColorMode>(
+                    label: 'Colour mode',
+                    value: settings.colorMode,
+                    onChanged: notifier.setColorMode,
+                    segments: const <AstryxSegment<AstryxColorMode>>[
+                      AstryxSegment(
+                        value: AstryxColorMode.system,
+                        label: 'System',
+                      ),
+                      AstryxSegment(
+                        value: AstryxColorMode.light,
+                        label: 'Light',
+                      ),
+                      AstryxSegment(value: AstryxColorMode.dark, label: 'Dark'),
+                    ],
+                  ),
+                ),
+                AstryxField(
+                  label: 'Density',
+                  child: AstryxSegmentedControl<AstryxTableDensity>(
+                    label: 'Density',
+                    value: settings.density,
+                    onChanged: notifier.setDensity,
+                    segments: const <AstryxSegment<AstryxTableDensity>>[
+                      AstryxSegment(
+                        value: AstryxTableDensity.compact,
+                        label: 'Compact',
+                      ),
+                      AstryxSegment(
+                        value: AstryxTableDensity.balanced,
+                        label: 'Balanced',
+                      ),
+                      AstryxSegment(
+                        value: AstryxTableDensity.spacious,
+                        label: 'Spacious',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          AstryxSection(
+            title: 'Data',
+            showDivider: true,
+            child: AstryxVStack(
+              gap: AstryxSpacingToken.spacing5,
+              align: AstryxStackAlign.stretch,
+              children: <Widget>[
+                AstryxSelector<int>(
+                  label: 'Rows per page',
+                  description:
+                      'How many rows the browser fetches at a time. '
+                      'The table draws every row it is given, so this is also '
+                      'how much work one page is.',
                   value: _pageSizes.contains(settings.pageSize)
                       ? settings.pageSize
                       : 100,
-                  items: [
-                    for (final n in _pageSizes)
-                      DropdownMenuItem(value: n, child: Text('$n')),
+                  width: 200,
+                  onChanged: (value) => notifier.setPageSize(value ?? 100),
+                  options: <AstryxSelectorEntry<int>>[
+                    for (final size in _pageSizes)
+                      AstryxSelectorOption<int>(value: size, label: '$size'),
                   ],
-                  onChanged: (v) {
-                    if (v != null) notifier.setPageSize(v);
-                  },
                 ),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Confirm before delete'),
-                subtitle: const Text('Ask before destructive actions'),
-                value: settings.confirmDeletes,
-                onChanged: notifier.setConfirmDeletes,
-              ),
-              const Divider(height: Spacing.xl),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  onPressed: () => notifier.reset(),
-                  icon: const Icon(Icons.restore, size: 16),
-                  label: const Text('Reset to defaults'),
+                AstryxSwitch(
+                  label: 'Confirm before deleting',
+                  description:
+                      'Ask first when removing rows, objects or '
+                      'connections.',
+                  value: settings.confirmDeletes,
+                  onChanged: notifier.setConfirmDeletes,
                 ),
-              ),
-              const SizedBox(height: Spacing.lg),
-              Text(
-                'Theme preview uses seed ${_hex(settings.seedColor)} · '
-                'matches ${AppTheme.defaultSeed == settings.seed ? 'default' : 'custom'}',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          AstryxSection(
+            title: 'Reset',
+            child: _ResetButton(onReset: notifier.reset),
+          ),
+        ],
       ),
     );
   }
-
-  Widget _section(ThemeData theme, String label) => Padding(
-        padding: const EdgeInsets.only(bottom: Spacing.sm),
-        child: Text(label,
-            style: theme.textTheme.titleSmall
-                ?.copyWith(color: theme.colorScheme.primary)),
-      );
-
-  static String _hex(int argb) =>
-      '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 }
 
+/// An accent on top of the theme, or the theme's own.
+class _AccentPicker extends StatelessWidget {
+  const _AccentPicker({required this.selected, required this.onChanged});
+
+  /// Null means the theme decides.
+  final int? selected;
+  final ValueChanged<int?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return AstryxField(
+      label: 'Accent',
+      description:
+          'Overrides the theme’s accent. Everything derived from it — '
+          'hover, pressed, muted — is regenerated to match.',
+      // A grid, not a wrapping row: a selectable card with no width given to it
+      // fills the line it is on, so a wrap put one swatch on each row. Columns
+      // also line the names up, which a wrap of ragged-width cards does not.
+      child: AstryxGrid(
+        minWidth: 190,
+        gap: AstryxSpacingToken.spacing2,
+        children: <Widget>[
+          _Swatch(
+            name: 'Theme default',
+            color: null,
+            selected: selected == null,
+            onPressed: () => onChanged(null),
+          ),
+          for (final (name, argb) in dextrAccents)
+            _Swatch(
+              name: name,
+              color: Color(argb),
+              selected: selected == argb,
+              onPressed: () => onChanged(argb),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One accent option.
+///
+/// A card rather than a bare coloured box: it needs a name, a selected state and
+/// a focus ring, and `AstryxSelectableCard` is the control that has all three.
+/// The name is never conveyed by the colour alone — it is the accessible name,
+/// and the tick is a second signal beside the hue.
 class _Swatch extends StatelessWidget {
   const _Swatch({
     required this.name,
     required this.color,
     required this.selected,
-    required this.onTap,
+    required this.onPressed,
   });
 
   final String name;
-  final Color color;
+  final Color? color;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: name,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(Radii.md),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(Radii.md),
-            border: Border.all(
-              color: selected
-                  ? Theme.of(context).colorScheme.onSurface
-                  : Colors.transparent,
-              width: 2,
+    final theme = AstryxTheme.of(context);
+
+    return AstryxSelectableCard(
+      label: name,
+      control: AstryxSelectableCardControl.radio,
+      padding: AstryxSpacingToken.spacing2,
+      controlSize: AstryxToggleSize.sm,
+      selected: selected,
+      onSelectedChanged: (_) => onPressed(),
+      child: AstryxHStack(
+        gap: AstryxSpacingToken.spacing2,
+        children: <Widget>[
+          Container(
+            width: theme.size(AstryxSizeToken.elementSm),
+            height: theme.size(AstryxSizeToken.elementSm),
+            decoration: BoxDecoration(
+              // The theme's own accent, for the "no override" option.
+              color: color ?? theme.color(AstryxColorToken.accent),
+              borderRadius: theme.borderRadius(AstryxRadiusToken.inner),
+              border: Border.all(
+                color: theme.color(AstryxColorToken.border),
+                width: theme.borderWidth(),
+              ),
             ),
           ),
-          child: selected
-              ? const Icon(Icons.check, color: Colors.white, size: 18)
-              : null,
-        ),
+          // Flexible because the card is now a grid cell rather than a row of
+          // its own: the name has to give way at the column width instead of
+          // pushing past it.
+          Flexible(
+            child: AstryxText(
+              name,
+              type: AstryxTextType.supporting,
+              maxLines: 1,
+            ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+/// Reset, behind a confirmation: it is one press that changes six settings.
+class _ResetButton extends StatefulWidget {
+  const _ResetButton({required this.onReset});
+
+  final Future<void> Function() onReset;
+
+  @override
+  State<_ResetButton> createState() => _ResetButtonState();
+}
+
+class _ResetButtonState extends State<_ResetButton> {
+  final AstryxDialogController _confirm = AstryxDialogController();
+
+  @override
+  void dispose() {
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AstryxHStack(
+      gap: AstryxSpacingToken.spacing3,
+      children: <Widget>[
+        AstryxButton(label: 'Reset to defaults', onPressed: _confirm.show),
+        AstryxAlertDialog(
+          controller: _confirm,
+          title: 'Reset every setting?',
+          description:
+              'Theme, accent, colour mode, density, page size and the '
+              'delete confirmation all go back to their defaults. Your '
+              'connections are not touched.',
+          confirmLabel: 'Reset settings',
+          onConfirm: () async {
+            // Resolved before the await: the scope is what shows the toast, and
+            // reaching for it through a context afterwards is the async-gap bug.
+            final toasts = AstryxToastScope.of(context);
+            await widget.onReset();
+            toasts.show(const AstryxToast(message: 'Settings reset'));
+          },
+        ),
+      ],
     );
   }
 }

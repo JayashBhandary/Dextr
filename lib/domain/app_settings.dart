@@ -1,24 +1,31 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+
+import '../theme/app_theme.dart';
 
 /// User-configurable application settings, persisted as JSON.
 class AppSettings {
   const AppSettings({
-    this.themeMode = ThemeMode.system,
-    this.seedColor = 0xFF3D5AFE,
-    this.compactDensity = true,
+    this.colorMode = AstryxColorMode.system,
+    this.theme = DextrTheme.neutral,
+    this.seedColor,
+    this.density = AstryxTableDensity.compact,
     this.pageSize = 100,
     this.confirmDeletes = true,
   });
 
-  final ThemeMode themeMode;
+  /// Light, dark, or follow the OS.
+  final AstryxColorMode colorMode;
 
-  /// Accent / seed color as a 32-bit ARGB int.
-  final int seedColor;
+  /// Which astryx_ui theme the tokens come from.
+  final DextrTheme theme;
 
-  /// Compact vs comfortable visual density.
-  final bool compactDensity;
+  /// An accent override as a 32-bit ARGB int, or null to keep the theme's own.
+  final int? seedColor;
+
+  /// How much room a row of data takes.
+  final AstryxTableDensity density;
 
   /// Default rows-per-page when browsing tabular data.
   final int pageSize;
@@ -26,41 +33,62 @@ class AppSettings {
   /// Ask for confirmation before destructive actions.
   final bool confirmDeletes;
 
-  Color get seed => Color(seedColor);
+  /// The rhythm lists and rails take, which follows the table density: a user
+  /// who asked for dense rows did not mean dense rows only in tables.
+  AstryxItemDensity get itemDensity => density == AstryxTableDensity.spacious
+      ? AstryxItemDensity.balanced
+      : AstryxItemDensity.compact;
 
   AppSettings copyWith({
-    ThemeMode? themeMode,
+    AstryxColorMode? colorMode,
+    DextrTheme? theme,
     int? seedColor,
-    bool? compactDensity,
+    bool clearSeedColor = false,
+    AstryxTableDensity? density,
     int? pageSize,
     bool? confirmDeletes,
-  }) =>
-      AppSettings(
-        themeMode: themeMode ?? this.themeMode,
-        seedColor: seedColor ?? this.seedColor,
-        compactDensity: compactDensity ?? this.compactDensity,
-        pageSize: pageSize ?? this.pageSize,
-        confirmDeletes: confirmDeletes ?? this.confirmDeletes,
-      );
+  }) => AppSettings(
+    colorMode: colorMode ?? this.colorMode,
+    theme: theme ?? this.theme,
+    seedColor: clearSeedColor ? null : (seedColor ?? this.seedColor),
+    density: density ?? this.density,
+    pageSize: pageSize ?? this.pageSize,
+    confirmDeletes: confirmDeletes ?? this.confirmDeletes,
+  );
 
   Map<String, Object?> toJson() => {
-        'themeMode': themeMode.name,
-        'seedColor': seedColor,
-        'compactDensity': compactDensity,
-        'pageSize': pageSize,
-        'confirmDeletes': confirmDeletes,
-      };
+    'colorMode': colorMode.name,
+    'theme': theme.name,
+    'seedColor': seedColor,
+    'density': density.name,
+    'pageSize': pageSize,
+    'confirmDeletes': confirmDeletes,
+  };
 
-  static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
-        themeMode: ThemeMode.values.firstWhere(
-          (m) => m.name == j['themeMode'],
-          orElse: () => ThemeMode.system,
-        ),
-        seedColor: (j['seedColor'] as num?)?.toInt() ?? 0xFF3D5AFE,
-        compactDensity: j['compactDensity'] as bool? ?? true,
-        pageSize: (j['pageSize'] as num?)?.toInt() ?? 100,
-        confirmDeletes: j['confirmDeletes'] as bool? ?? true,
-      );
+  /// Reads both the current shape and the pre-astryx one: `themeMode` was the
+  /// Material `ThemeMode` (same three names), and `compactDensity` was a bool.
+  /// An installed copy should not lose its settings to a UI rewrite.
+  static AppSettings fromJson(Map<String, Object?> j) {
+    final mode = (j['colorMode'] ?? j['themeMode']) as String?;
+    final density = j['density'] as String?;
+    final legacyCompact = j['compactDensity'] as bool?;
+    return AppSettings(
+      colorMode: AstryxColorMode.values.firstWhere(
+        (m) => m.name == mode,
+        orElse: () => AstryxColorMode.system,
+      ),
+      theme: DextrTheme.byName(j['theme'] as String? ?? 'neutral'),
+      seedColor: (j['seedColor'] as num?)?.toInt(),
+      density: AstryxTableDensity.values.firstWhere(
+        (d) => d.name == density,
+        orElse: () => legacyCompact == false
+            ? AstryxTableDensity.balanced
+            : AstryxTableDensity.compact,
+      ),
+      pageSize: (j['pageSize'] as num?)?.toInt() ?? 100,
+      confirmDeletes: j['confirmDeletes'] as bool? ?? true,
+    );
+  }
 
   String encode() => jsonEncode(toJson());
 

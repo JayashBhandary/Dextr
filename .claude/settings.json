@@ -1,0 +1,13 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash(flutter clean *)",
+      "Bash(flutter pub *)",
+      "Bash(flutter run *)",
+      "Bash(tee /tmp/dextr_run.log)",
+      "Bash(osascript -e 'tell application \"dextr\" to activate')",
+      "Bash(screencapture -o -x /tmp/dextr_window.png)"
+    ]
+  }
+}

@@ -1,87 +1,96 @@
-import 'package:flutter/material.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../core/cell_value.dart';
 import 'cell_renderer.dart';
 
-/// Simple virtualized grid using DataTable inside nested ScrollViews.
-/// Replaceable with PlutoGrid post-v0.1 without changing the call sites.
-class DextrDataGrid extends StatefulWidget {
+/// A page of rows from any backend, as an `AstryxTable`.
+///
+/// The table does not virtualise, which is exactly the contract the browse pane
+/// already had: rows arrive one `pageSize` at a time and the caller pages. Feed
+/// it a whole table and it will try to build every row.
+class DextrDataGrid extends StatelessWidget {
   const DextrDataGrid({
     super.key,
     required this.columns,
     required this.rows,
-    this.onRowTap,
+    required this.label,
+    this.density = AstryxTableDensity.compact,
+    this.onRowPressed,
+    this.rowActionsBuilder,
+    this.emptyState,
   });
 
   final List<String> columns;
   final List<RowData> rows;
-  final void Function(int rowIndex, RowData row)? onRowTap;
 
-  @override
-  State<DextrDataGrid> createState() => _DextrDataGridState();
-}
+  /// The table's accessible name — "rows of public.users".
+  final String label;
+  final AstryxTableDensity density;
+  final void Function(RowData row)? onRowPressed;
+  final Widget Function(BuildContext, RowData row)? rowActionsBuilder;
+  final Widget? emptyState;
 
-class _DextrDataGridState extends State<DextrDataGrid> {
-  final ScrollController _v = ScrollController();
-  final ScrollController _h = ScrollController();
-
-  @override
-  void dispose() {
-    _v.dispose();
-    _h.dispose();
-    super.dispose();
+  /// Names a row for assistive technology. The first column is nearly always
+  /// the key in a database listing, so it is what identifies the row; without
+  /// this every row would announce itself identically.
+  String _rowLabel(RowData row) {
+    if (columns.isEmpty) return 'row';
+    final first = row[columns.first];
+    final value = first == null || first is NullCell ? null : first.display();
+    return value == null || value.isEmpty
+        ? 'row ${rows.indexOf(row) + 1}'
+        : '${columns.first} $value';
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.columns.isEmpty) {
-      return const Center(child: Text('No columns'));
+    if (columns.isEmpty) {
+      return emptyState ??
+          const AstryxEmptyState(
+            title: 'No columns',
+            description: 'The source returned rows with no columns in them.',
+            size: AstryxEmptyStateSize.compact,
+          );
     }
-    return Scrollbar(
-      controller: _v,
-      thumbVisibility: true,
-      child: SingleChildScrollView(
-        controller: _v,
-        scrollDirection: Axis.vertical,
-        child: Scrollbar(
-          controller: _h,
-          thumbVisibility: true,
-          notificationPredicate: (n) => n.depth == 1,
-          child: SingleChildScrollView(
-            controller: _h,
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowHeight: 36,
-              dataRowMinHeight: 32,
-              dataRowMaxHeight: 40,
-              columnSpacing: 24,
-              columns: [
-                for (final c in widget.columns)
-                  DataColumn(
-                    label: Text(c, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  ),
-              ],
-              rows: [
-                for (var i = 0; i < widget.rows.length; i++)
-                  DataRow(
-                    onSelectChanged: widget.onRowTap == null
-                        ? null
-                        : (_) => widget.onRowTap!(i, widget.rows[i]),
-                    cells: [
-                      for (final c in widget.columns)
-                        DataCell(
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 360),
-                            child: CellRenderer(widget.rows[i][c] ?? const NullCell()),
-                          ),
-                        ),
-                    ],
-                  ),
-              ],
-            ),
+
+    return AstryxTable<RowData>(
+      label: label,
+      rows: rows,
+      density: density,
+      // Identity is the row's position: a result set has no key of its own,
+      // and two identical rows are still two rows.
+      keyOf: (row) => rows.indexOf(row),
+      rowLabelOf: _rowLabel,
+      onRowPressed: onRowPressed,
+      rowActionsBuilder: rowActionsBuilder,
+      emptyState: emptyState,
+      showRowDividers: true,
+      columns: <AstryxTableColumn<RowData>>[
+        for (final column in columns)
+          AstryxTableColumn<RowData>(
+            id: column,
+            header: column,
+            // Clamped intrinsic width: an empty column does not collapse to
+            // nothing, and one long JSON value cannot push the rest off-screen.
+            width: const AstryxTableColumnWidth.intrinsic(min: 96, max: 360),
+            alignment: _alignmentOf(column),
+            cellBuilder: (context, row) =>
+                CellRenderer(row[column] ?? const NullCell()),
           ),
-        ),
-      ),
+      ],
     );
+  }
+
+  /// Numbers read against the right edge; everything else against the start.
+  AstryxTableAlignment _alignmentOf(String column) {
+    final anyNumeric = rows.any((row) => row[column] is NumCell);
+    final anyOther = rows.any((row) {
+      final cell = row[column];
+      return cell != null && cell is! NumCell && cell is! NullCell;
+    });
+    return anyNumeric && !anyOther
+        ? AstryxTableAlignment.end
+        : AstryxTableAlignment.start;
   }
 }

@@ -17,6 +17,13 @@ Future<void> main() async {
       minimumSize: Size(960, 600),
       center: true,
       title: 'Dextr',
+      // No title bar: the app draws the top of its own window. `WindowFrame`
+      // puts the strip back that the window needs to be draggable, and on
+      // Windows and Linux the buttons too — there, hiding the bar takes them
+      // with it. macOS keeps its traffic lights, which then float over the
+      // app's own surface, which is why the frame reserves height for them.
+      titleBarStyle: TitleBarStyle.hidden,
+      windowButtonVisibility: true,
     );
     await windowManager.waitUntilReadyToShow(opts, () async {
       await windowManager.show();
