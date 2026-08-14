@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Dextr
-Comment=Cross-platform database & data-source management tool
-Exec=@EXEC@
-Icon=dextr
-Terminal=false
-Categories=Development;Database;Utility;
-StartupWMClass=dextr

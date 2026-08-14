@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Dextr
+Comment=Cross-platform database & data-source management tool
+Exec=@EXEC@
+# Matches the icon installed as com.dextr.dextr.png in the hicolor theme.
+Icon=com.dextr.dextr
+Terminal=false
+Categories=Development;Database;Utility;
+# The runner calls g_set_prgname(APPLICATION_ID), so the window reports
+# com.dextr.dextr as its WM_CLASS / Wayland app_id. This must match, or the
+# shell cannot tie the running window back to this entry and falls back to a
+# generic icon and the raw app ID as the name.
+StartupWMClass=com.dextr.dextr

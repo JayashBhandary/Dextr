@@ -124,10 +124,13 @@ case "$PLATFORM" in
   linux)
     INSTALL_DIR="/opt/dextr"
     BIN_LINK="/usr/local/bin/dextr"
-    DESKTOP_FILE="/usr/share/applications/dextr.desktop"
+    # Named after the GTK application ID (see linux/CMakeLists.txt) so the
+    # shell can match a running window's WM_CLASS / app_id to this entry.
+    APP_ID="com.dextr.dextr"
+    DESKTOP_FILE="/usr/share/applications/$APP_ID.desktop"
     ICON_DIR="/usr/share/icons/hicolor/512x512/apps"
-    ICON_FILE="$ICON_DIR/dextr.png"
-    PIXMAP_FILE="/usr/share/pixmaps/dextr.png"
+    ICON_FILE="$ICON_DIR/$APP_ID.png"
+    PIXMAP_FILE="/usr/share/pixmaps/$APP_ID.png"
 
     echo "==> Installing to $INSTALL_DIR (sudo required)"
     sudo rm -rf "$INSTALL_DIR"
@@ -149,11 +152,25 @@ case "$PLATFORM" in
       echo "Could not auto-detect the executable; skipping CLI symlink." >&2
     fi
 
+    # Drop entries and icons from releases that used the old "dextr" names,
+    # otherwise the launcher shows two entries and may keep the stale icon.
+    sudo rm -f /usr/share/applications/dextr.desktop \
+               "$ICON_DIR/dextr.png" \
+               /usr/share/pixmaps/dextr.png
+
     # Install desktop entry so it shows up in app launchers
-    if [ -f "$INSTALL_DIR/dextr.desktop" ] && [ -n "$EXEC_PATH" ]; then
+    SRC_DESKTOP=""
+    for candidate in "$INSTALL_DIR/$APP_ID.desktop" "$INSTALL_DIR/dextr.desktop"; do
+      if [ -f "$candidate" ]; then
+        SRC_DESKTOP="$candidate"
+        break
+      fi
+    done
+
+    if [ -n "$SRC_DESKTOP" ] && [ -n "$EXEC_PATH" ]; then
       echo "==> Registering desktop entry at $DESKTOP_FILE"
       sudo mkdir -p "$(dirname "$DESKTOP_FILE")"
-      sudo sh -c "sed 's|@EXEC@|$EXEC_PATH|g' '$INSTALL_DIR/dextr.desktop' > '$DESKTOP_FILE'"
+      sudo sh -c "sed -e 's|@EXEC@|$EXEC_PATH|g' -e 's|^Icon=dextr\$|Icon=$APP_ID|' -e 's|^StartupWMClass=dextr\$|StartupWMClass=$APP_ID|' '$SRC_DESKTOP' > '$DESKTOP_FILE'"
       sudo chmod 644 "$DESKTOP_FILE"
     fi
 
@@ -166,6 +183,26 @@ case "$PLATFORM" in
       sudo mkdir -p "$(dirname "$PIXMAP_FILE")"
       sudo cp "$INSTALL_DIR/dextr.png" "$PIXMAP_FILE"
       sudo chmod 644 "$PIXMAP_FILE"
+
+      # The source is a single 1024px PNG. Panels and the switcher ask for much
+      # smaller sizes, so pre-scale when a resizer is around; without one the
+      # 512x512 copy above still resolves, just scaled at draw time.
+      RESIZE=""
+      for tool in magick convert; do
+        if command -v "$tool" >/dev/null 2>&1; then
+          RESIZE="$tool"
+          break
+        fi
+      done
+      if [ -n "$RESIZE" ]; then
+        for size in 16 24 32 48 64 128 256; do
+          SIZE_DIR="/usr/share/icons/hicolor/${size}x${size}/apps"
+          sudo mkdir -p "$SIZE_DIR"
+          sudo "$RESIZE" "$INSTALL_DIR/dextr.png" -resize "${size}x${size}" \
+            "$SIZE_DIR/$APP_ID.png" 2>/dev/null || true
+          sudo rm -f "$SIZE_DIR/dextr.png"
+        done
+      fi
     fi
 
     # Refresh desktop + icon caches so the entry appears without re-login

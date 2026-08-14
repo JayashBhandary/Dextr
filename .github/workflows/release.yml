@@ -167,7 +167,7 @@ jobs:
       - name: Stage desktop entry and icon
         run: |
           BUNDLE="build/linux/x64/release/bundle"
-          cp linux/packaging/dextr.desktop "$BUNDLE/dextr.desktop"
+          cp linux/packaging/com.dextr.dextr.desktop "$BUNDLE/com.dextr.dextr.desktop"
           cp assets/icon/icon.png "$BUNDLE/dextr.png"
 
       - name: Package tarball
