@@ -28,20 +28,87 @@ $release = Invoke-RestMethod `
     -Headers $headers `
     -UseBasicParsing
 
-$asset = $release.assets | Where-Object { $_.name -like '*windows-x64.zip' } | Select-Object -First 1
+# Only assets served from this project's own release path are candidates: the
+# release lists every attached asset, and a name match alone would accept one
+# uploaded by somebody else.
+$releasePrefix = "https://github.com/$Repo/releases/download/"
+
+$asset = $release.assets |
+    Where-Object {
+        $_.browser_download_url.StartsWith($releasePrefix) -and
+        $_.name -match '^dextr-.*windows-x64\.zip$'
+    } |
+    Select-Object -First 1
 
 if (-not $asset) {
     Write-Error "No windows-x64.zip asset found in the latest release. See https://github.com/$Repo/releases"
     exit 1
 }
 
+$sums = $release.assets |
+    Where-Object {
+        $_.browser_download_url.StartsWith($releasePrefix) -and $_.name -eq 'SHA256SUMS'
+    } |
+    Select-Object -First 1
+
+if (-not $sums) {
+    Write-Error @"
+This release publishes no SHA256SUMS file, so the download cannot be verified.
+Refusing to install.
+
+Releases from v0.1.3 onward publish one. To install an earlier build, download
+it from https://github.com/$Repo/releases and check it by hand.
+"@
+    exit 1
+}
+
 $tmpFile = [System.IO.Path]::GetTempFileName()
 $zipPath = "$tmpFile.zip"
 Move-Item -Force $tmpFile $zipPath
+$sumsPath = "$tmpFile.sums"
 
 try {
     Write-Host "==> Downloading $($asset.browser_download_url)"
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -UseBasicParsing
+
+    # Before the archive is expanded. An installer that skips this is a remote
+    # code execution primitive for whoever can influence a release artifact.
+    Write-Host '==> Verifying checksum'
+    Invoke-WebRequest -Uri $sums.browser_download_url -OutFile $sumsPath -UseBasicParsing
+
+    $expected = $null
+    foreach ($line in Get-Content $sumsPath) {
+        # `sha256sum` writes "<digest>  <name>", and prefixes the name with '*'
+        # for a binary-mode entry. Matched on the exact name, not a substring.
+        $fields = $line -split '\s+', 2
+        if ($fields.Count -lt 2) { continue }
+        $name = $fields[1].Trim().TrimStart('*')
+        if ($name -eq $asset.name) {
+            $expected = $fields[0].Trim().ToLowerInvariant()
+            break
+        }
+    }
+
+    if (-not $expected) {
+        Write-Error "SHA256SUMS does not list $($asset.name). Refusing to install."
+        exit 1
+    }
+
+    $actual = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    if ($expected -ne $actual) {
+        Write-Error @"
+Checksum mismatch for $($asset.name) - refusing to install.
+  expected: $expected
+  actual:   $actual
+
+The download does not match what the release says it published. This is either
+a corrupted transfer or a tampered artifact; do not install it either way.
+"@
+        exit 1
+    }
+
+    Write-Host "    OK  $actual"
 
     $installDir = Join-Path $env:LOCALAPPDATA "Programs\$AppName"
 
@@ -89,7 +156,9 @@ try {
     Write-Host 'Done.'
 }
 finally {
-    if (Test-Path $zipPath) {
-        Remove-Item -Force $zipPath
+    foreach ($path in @($zipPath, $sumsPath)) {
+        if ($path -and (Test-Path $path)) {
+            Remove-Item -Force $path
+        }
     }
 }

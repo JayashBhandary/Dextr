@@ -307,4 +307,6 @@ class _NoSecrets implements SecretsStore {
 
   @override
   Future<void> write(String ref, ConnectionSecrets secrets) async {}
+  @override
+  Future<int> sweepOrphans(Iterable<String> liveRefs) async => 0;
 }

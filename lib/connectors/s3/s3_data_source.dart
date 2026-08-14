@@ -46,52 +46,68 @@ class S3DataSource extends DataSource with Writable, ObjectStorage, FileBrowsabl
     final port = (record.config['port'] as num?)?.toInt();
     final region = record.config['region'] as String? ?? 'us-east-1';
     final useSSL = (record.config['useSSL'] as bool?) ?? true;
-    final accessKey = secrets?.accessKeyId ?? '';
-    final secretKey = secrets?.secretAccessKey ?? '';
-
-    Minio build(bool ssl) => Minio(
-          endPoint: endpoint,
-          port: port,
-          useSSL: ssl,
-          region: region,
-          accessKey: accessKey,
-          secretKey: secretKey,
-          sessionToken: secrets?.sessionToken,
-        );
 
     try {
-      _client = build(useSSL);
+      _client = Minio(
+        endPoint: endpoint,
+        port: port,
+        useSSL: useSSL,
+        region: region,
+        accessKey: secrets?.accessKeyId ?? '',
+        secretKey: secrets?.secretAccessKey ?? '',
+        sessionToken: secrets?.sessionToken,
+      );
       await ping();
     } catch (e, st) {
-      // TLS mismatch: client spoke HTTPS to a plain-HTTP endpoint (or the
-      // reverse). MinIO/OpenSSL surfaces this as "wrong version number".
-      // Retry once with the opposite SSL setting before giving up.
-      if (_isTlsMismatch(e)) {
-        try {
-          _client = build(!useSSL);
-          await ping();
-          return; // fallback worked
-        } catch (_) {
-          _client = null;
-        }
-      } else {
-        _client = null;
-      }
-      final hint = _isTlsMismatch(e)
-          ? ' (TLS mismatch — toggle "Use SSL"; endpoint likely speaks '
-              '${useSSL ? 'plain HTTP' : 'HTTPS'})'
-          : '';
-      throw ConnectError('S3 connect failed: $e$hint', cause: e, stack: st);
+      _client = null;
+      // Deliberately no retry with SSL inverted. A connection that falls back
+      // to plain HTTP puts the access key id, the request signature and — for
+      // temporary credentials — the session token on the wire in the clear,
+      // and an attacker who can break the handshake would be the one choosing
+      // that. The transport is the user's decision, made once, in the form.
+      throw ConnectError(
+        'S3 connect failed: $e${_hintFor(e, useSSL: useSSL)}',
+        cause: e,
+        stack: st,
+      );
     }
   }
 
-  static bool _isTlsMismatch(Object e) {
+  /// What to add to a connect failure, where the cause is recognisable.
+  ///
+  /// Split by *kind* of failure, because the two need opposite advice. A
+  /// protocol mismatch is a misconfiguration and the fix is the checkbox. A
+  /// certificate or handshake failure is a trust failure, and telling somebody
+  /// to turn TLS off in response to one is telling them to accept the attack.
+  static String _hintFor(Object e, {required bool useSSL}) {
     final s = e.toString().toLowerCase();
-    return s.contains('wrong version number') ||
-        s.contains('handshake') ||
-        s.contains('tlsexception') ||
-        s.contains('certificate');
+    if (_looksLikeCertificateProblem(s)) {
+      return ' — the server certificate could not be verified. Do not '
+          'continue unless you trust this network: an endpoint that cannot '
+          'prove who it is may not be the endpoint you think.';
+    }
+    if (useSSL && s.contains('wrong version number')) {
+      return ' — this endpoint appears to speak plain HTTP rather than HTTPS. '
+          'If it is a local MinIO, edit the connection and clear "Use HTTPS".';
+    }
+    if (!useSSL && _looksLikeHttpsExpected(s)) {
+      return ' — this endpoint appears to require HTTPS. Edit the connection '
+          'and tick "Use HTTPS".';
+    }
+    return '';
   }
+
+  static bool _looksLikeCertificateProblem(String lowercased) =>
+      lowercased.contains('certificate') ||
+      lowercased.contains('handshake') ||
+      lowercased.contains('tlsexception') ||
+      lowercased.contains('self signed') ||
+      lowercased.contains('unable to verify');
+
+  static bool _looksLikeHttpsExpected(String lowercased) =>
+      lowercased.contains('http_request') ||
+      lowercased.contains('400') ||
+      lowercased.contains('plain http request was sent to https');
 
   @override
   Future<void> disconnect() async {

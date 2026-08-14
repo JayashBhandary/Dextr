@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../connectors/mysql/mysql_ssl.dart';
 import '../../connectors/registry.dart';
 import '../../core/capabilities.dart';
 import '../../domain/connection_record.dart';
@@ -129,7 +130,10 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     'port': r.port,
     'database': r.database,
     'username': r.username,
-    'secure': r.secure,
+    // Replaces the old `secure` bool. Not written any more, and not carried
+    // forward either: `MysqlSslMode.fromConfig` reads whichever is present, so
+    // a record saved by an older build keeps working until it is next saved.
+    'sslMode': r.sslMode.name,
   };
 
   Map<String, Object?> _mongoConfig(MongoFormResult r) => {
@@ -381,7 +385,12 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     database: _cfgStr('database', 'dextr'),
     username: _cfgStr('username', 'root'),
     password: _secrets?.password ?? '',
-    secure: _cfgBool('secure', false),
+    // Read through the same migration the connector uses, so editing an older
+    // connection shows the transport it actually has rather than a default.
+    sslMode: MysqlSslMode.fromConfig(
+      widget.editing!.config['sslMode'],
+      legacySecure: widget.editing!.config['secure'],
+    ),
   );
 
   MongoFormResult get _initMongo => MongoFormResult(

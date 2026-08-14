@@ -1,6 +1,8 @@
 import 'package:astryx_ui/astryx_ui.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../connectors/mysql/mysql_ssl.dart';
+import '../../../core/hosts.dart';
 import 'connection_form_shell.dart';
 
 class MysqlFormResult {
@@ -11,7 +13,7 @@ class MysqlFormResult {
     required this.database,
     required this.username,
     required this.password,
-    required this.secure,
+    required this.sslMode,
   });
 
   final String name;
@@ -20,7 +22,7 @@ class MysqlFormResult {
   final String database;
   final String username;
   final String password;
-  final bool secure;
+  final MysqlSslMode sslMode;
 }
 
 class MysqlForm extends StatefulWidget {
@@ -51,7 +53,7 @@ class _MysqlFormState extends State<MysqlForm>
   late final TextEditingController _username;
   late final TextEditingController _password;
   late num? _port;
-  late bool _secure;
+  late MysqlSslMode _sslMode;
 
   @override
   void initState() {
@@ -63,11 +65,17 @@ class _MysqlFormState extends State<MysqlForm>
     _username = TextEditingController(text: initial?.username ?? 'root');
     _password = TextEditingController(text: initial?.password ?? '');
     _port = initial?.port ?? 3306;
-    _secure = initial?.secure ?? false;
+    _sslMode = initial?.sslMode ?? MysqlSslMode.disable;
+    // The warning below depends on the host, so the field has to be watched
+    // rather than read once at build.
+    _host.addListener(_onHostChanged);
   }
+
+  void _onHostChanged() => setState(() {});
 
   @override
   void dispose() {
+    _host.removeListener(_onHostChanged);
     _name.dispose();
     _host.dispose();
     _database.dispose();
@@ -75,6 +83,18 @@ class _MysqlFormState extends State<MysqlForm>
     _password.dispose();
     super.dispose();
   }
+
+  /// Whether this configuration sends credentials somewhere it cannot verify.
+  ///
+  /// Both halves matter: unverified TLS to a database on this machine is not
+  /// worth a warning, and plain TCP to one across the internet is worth a loud
+  /// one. Shown while the connection is being *decided*, which is the only
+  /// moment the user can act on it.
+  bool get _unprotectedToRemoteHost =>
+      !isLocalOrPrivateHost(_host.text) && !_sslMode.encrypts;
+
+  bool get _unverifiedToRemoteHost =>
+      !isLocalOrPrivateHost(_host.text) && _sslMode.encrypts;
 
   MysqlFormResult? _validate() {
     if (_name.text.trim().isEmpty) {
@@ -91,7 +111,7 @@ class _MysqlFormState extends State<MysqlForm>
       database: _database.text.trim(),
       username: _username.text.trim(),
       password: _password.text,
-      secure: _secure,
+      sslMode: _sslMode,
     );
   }
 
@@ -149,14 +169,46 @@ class _MysqlFormState extends State<MysqlForm>
             ),
           ],
         ),
-        // A checkbox, not a switch: this form has a Save button, and nothing on
-        // it takes effect until that is pressed.
-        AstryxCheckbox(
-          label: 'Connect over TLS',
-          description: 'Required by most hosted MySQL; usually off locally.',
-          value: _secure,
-          onChanged: (value) => setState(() => _secure = value),
+        // A selector rather than a checkbox, and worded like the Postgres one.
+        // "Connect over TLS" invited the reading that ticking it made the
+        // connection trustworthy, which for this driver it does not.
+        AstryxSelector<MysqlSslMode>(
+          label: 'SSL mode',
+          description: 'How much the server certificate is trusted.',
+          value: _sslMode,
+          onChanged: (value) =>
+              setState(() => _sslMode = value ?? MysqlSslMode.disable),
+          options: <AstryxSelectorEntry<MysqlSslMode>>[
+            for (final mode in MysqlSslMode.values)
+              AstryxSelectorOption<MysqlSslMode>(
+                value: mode,
+                label: mode.label,
+                description: mode.description,
+              ),
+          ],
         ),
+        // Said here, beside the decision, rather than left for the user to
+        // infer from an option description they have already scrolled past.
+        if (_unprotectedToRemoteHost)
+          const AstryxBanner(
+            status: AstryxBannerStatus.error,
+            title: 'This sends the password in the clear',
+            description:
+                'The host is not on this machine and SSL mode is "disable", so '
+                'the MySQL handshake and every row cross the network '
+                'unencrypted. Choose "require", or reach the server through an '
+                'SSH tunnel or a VPN.',
+          ),
+        if (_unverifiedToRemoteHost)
+          const AstryxBanner(
+            status: AstryxBannerStatus.warning,
+            title: 'Encrypted, but the server is not verified',
+            description:
+                'MySQL connections here accept any certificate, so this hides '
+                'the traffic from an observer but does not prove you reached '
+                'the right server. On a network you do not control, tunnel to '
+                'the database instead.',
+          ),
       ],
     );
   }

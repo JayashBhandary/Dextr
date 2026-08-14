@@ -69,17 +69,28 @@ class _ConnectionActionsMenuState extends ConsumerState<ConnectionActionsMenu> {
   }
 
   Future<void> _delete() async {
-    final id = widget.connectionId;
+    final record = _record;
+    if (record == null) return;
+    final id = record.id;
+
     await ref.read(connectionManagerProvider).close(id);
     ref.read(workspaceProvider.notifier).closeTabsFor(id);
+
+    // The secret goes before the record, and the order is the whole point: a
+    // `secretsRef` is stored nowhere but on the record, so dropping the record
+    // first would leave a credential in the keychain that nothing can name.
+    // Failing this way round is recoverable — a record whose secret is already
+    // gone asks for the password again.
+    await ref.read(secretsStoreProvider).delete(record.secretsRef);
     await ref.read(connectionsProvider.notifier).remove(id);
+
     if (!mounted) return;
     if (ref.read(activeConnectionIdProvider) == id) {
       ref.read(activeConnectionIdProvider.notifier).state = null;
     }
-    AstryxToastScope.of(
-      context,
-    ).show(const AstryxToast(message: 'Connection deleted'));
+    AstryxToastScope.of(context).show(
+      const AstryxToast(message: 'Connection and its credentials deleted'),
+    );
   }
 
   @override

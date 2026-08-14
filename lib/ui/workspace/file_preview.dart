@@ -225,7 +225,12 @@ class _FilePreviewDialogState extends ConsumerState<FilePreviewDialog> {
     final canOpen =
         entry != null &&
         _bytes != null &&
-        ref.read(externalOpenProvider).isSupported;
+        ref.read(externalOpenProvider).isSupported &&
+        // The extension decides which program the system runs, so a format
+        // this application will not vouch for gets no button. `ExternalOpen`
+        // refuses the same names anyway; hiding it means nobody is offered an
+        // action that cannot be taken.
+        FileKind.canOpenExternally(entry);
 
     return AstryxHStack(
       gap: AstryxSpacingToken.spacing2,
@@ -562,10 +567,21 @@ class _FilePreviewDialogState extends ConsumerState<FilePreviewDialog> {
       ),
     };
 
+    // Said plainly where it applies, because the alternative reads as a missing
+    // feature. The name came from the store, and the extension is what would
+    // choose the program — so an unrecognised one is downloaded, not launched.
+    final withheld =
+        !FileKind.canOpenExternally(entry) &&
+        ref.read(externalOpenProvider).isSupported;
+
     return AstryxEmptyState(
       icon: Icon(DextrIcons.forFile(entry)),
       title: title,
-      description: description,
+      description: withheld
+          ? '$description Dextr will not open this one for you: its extension '
+                'is what would pick the program that runs, and that name came '
+                'from the store rather than from you.'
+          : description,
       size: AstryxEmptyStateSize.compact,
     );
   }

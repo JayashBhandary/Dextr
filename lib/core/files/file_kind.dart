@@ -56,6 +56,38 @@ enum FileKind {
   static String extensionOf(String name) =>
       p.extension(name).toLowerCase().replaceFirst('.', '');
 
+  /// Extensions this application will hand to the operating system's opener.
+  ///
+  /// Documents and media, and nothing else. On every desktop it is the
+  /// *extension* that chooses the program: `xdg-open` runs a `.desktop` file's
+  /// `Exec=` line, `open` runs a `.command`, and `cmd /c start` runs `.bat`,
+  /// `.cmd`, `.hta`, `.js`, `.vbs` and the rest. An object in a bucket is named
+  /// by whoever put it there, so an unconstrained extension turns "look at this
+  /// file" into "run this file".
+  ///
+  /// An allowlist rather than a blocklist, because the set of suffixes some
+  /// platform treats as executable is not knowable from here, and a preview
+  /// that refuses an unusual-but-harmless format costs one download.
+  static const Set<String> openableExternally = <String>{
+    // Documents
+    'pdf', 'docx', 'xlsx', 'xlsm', 'csv', 'tsv', 'txt', 'md', 'json', 'log',
+    // Images
+    'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp',
+    // Video
+    'mp4', 'm4v', 'mov', 'webm', 'mkv',
+    // Audio
+    'mp3', 'm4a', 'wav', 'flac', 'ogg',
+  };
+
+  /// Whether [entry] may be handed to the system opener.
+  ///
+  /// Reads the name rather than the reported content type on purpose: a store
+  /// answers `application/octet-stream` for everything, and the opener is going
+  /// to go by the name regardless of what the metadata claimed. A name with no
+  /// extension at all fails this, which is the safe way round.
+  static bool canOpenExternally(FileEntry entry) =>
+      !entry.isFolder && openableExternally.contains(extensionOf(entry.name));
+
   static FileKind _byContentType(String? contentType) {
     final type = contentType?.toLowerCase() ?? '';
     if (type.startsWith('image/')) return FileKind.image;

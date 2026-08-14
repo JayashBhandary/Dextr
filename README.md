@@ -92,9 +92,19 @@ irm https://raw.githubusercontent.com/JayashBhandary/dextr/main/install.ps1 | ie
 
 | OS | Installs to |
 |----|-------------|
-| macOS | `/Applications/Dextr.app` (quarantine stripped — unsigned build) |
+| macOS | `/Applications/Dextr.app` |
 | Linux | `/opt/dextr`, symlink `/usr/local/bin/dextr`, desktop entry + icon |
 | Windows | `%LOCALAPPDATA%\Programs\dextr`, Start Menu shortcut |
+
+Both scripts download `SHA256SUMS` from the release and refuse to install an
+artifact whose digest does not match it, or a release that does not publish one.
+Assets are only accepted from this repository's own release URL.
+
+> **macOS builds are unsigned.** The installer no longer strips the quarantine
+> attribute — doing that removed Gatekeeper's check on a binary it had just
+> downloaded. The first launch will be refused; right-click *Dextr.app* → **Open**
+> and confirm, or use **Open Anyway** in System Settings → Privacy & Security.
+> Once only.
 
 > Set `GITHUB_TOKEN` before running to avoid GitHub API rate limits.
 
@@ -136,11 +146,21 @@ gh workflow run release.yml
 ```
 
 Each job builds and uploads its artifact; the final `release` job attaches them
-all to the `v<version>` tag with auto-generated notes.
+all to the `v<version>` tag with auto-generated notes, alongside a `SHA256SUMS`
+file and a [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations).
+The install scripts verify the former before installing anything.
 
 > **Signing:** macOS artifacts are **unsigned** (ad-hoc codesigned after `lipo`
 > thinning). For notarized distribution, add a Developer ID cert via repository
 > secrets and the matching signing steps.
+
+## Security
+
+Findings from the last review, with severities and affected files, are in
+[`SECURITY_AUDIT.md`](SECURITY_AUDIT.md). The MySQL connector has a known
+limitation worth reading before pointing it at anything over an untrusted
+network: the bundled driver accepts any TLS certificate, so its `require` SSL
+mode encrypts without authenticating the server (F-01).
 
 ## Tech stack
 

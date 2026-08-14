@@ -427,4 +427,6 @@ class _NoSecrets implements SecretsStore {
 
   @override
   Future<void> delete(String secretsRef) async {}
+  @override
+  Future<int> sweepOrphans(Iterable<String> liveRefs) async => 0;
 }

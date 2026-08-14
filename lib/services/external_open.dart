@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
+import '../core/files/file_kind.dart';
 import '../core/logger.dart';
 import '../services/export_service.dart';
 
@@ -37,10 +38,20 @@ class ExternalOpen {
   bool get isSupported =>
       Platform.isLinux || Platform.isMacOS || Platform.isWindows;
 
+  /// Whether a file of this name may be handed to the system opener at all.
+  ///
+  /// Exposed so a caller can hide the affordance rather than offer a button
+  /// that refuses. [open] checks it again regardless — see there for why.
+  static bool canOpen(String fileName) => FileKind.openableExternally
+      .contains(FileKind.extensionOf(p.basename(fileName)));
+
   /// Writes [bytes] somewhere temporary and opens it. Returns the path written.
   ///
   /// The name is sanitised and the file goes in a directory of its own, so an
   /// object called `../../etc/passwd` cannot land anywhere but inside it.
+  ///
+  /// Throws [UnsupportedError] for a name whose extension is not on
+  /// [FileKind.openableExternally].
   Future<String> open({
     required String fileName,
     required Uint8List bytes,
@@ -52,12 +63,34 @@ class ExternalOpen {
       );
     }
 
+    final safe = ExportService.sanitiseFileName(p.basename(fileName));
+
+    // Checked here and not only where the button is drawn. The extension is
+    // what selects the program that runs, the name comes from whoever put the
+    // object in the bucket, and this method is the one place every route to the
+    // system opener passes through — so this is where the refusal belongs.
+    // Sanitised first, so the check sees the same string the file will be
+    // written under rather than the one the store reported.
+    final extension = FileKind.extensionOf(safe);
+    if (!FileKind.openableExternally.contains(extension)) {
+      throw UnsupportedError(
+        extension.isEmpty
+            ? 'Dextr will not hand a file with no extension to the system '
+                  'opener, because the extension is what chooses the program '
+                  'that runs. Download it instead, and open it somewhere you '
+                  'have decided to trust.'
+            : 'Dextr will not hand a .$extension file to the system opener, '
+                  'because the extension is what chooses the program that '
+                  'runs. Download it instead, and open it somewhere you have '
+                  'decided to trust.',
+      );
+    }
+
     final root = _temporaryDirectory ?? Directory.systemTemp;
     final directory = await Directory(
       p.join(root.path, 'dextr-preview'),
     ).create(recursive: true);
-    final safe = ExportService.sanitiseFileName(p.basename(fileName));
-    final file = File(p.join(directory.path, safe.isEmpty ? 'file' : safe));
+    final file = File(p.join(directory.path, safe));
     await file.writeAsBytes(bytes, flush: true);
 
     await _launch(file.path);

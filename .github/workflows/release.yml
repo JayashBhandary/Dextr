@@ -185,6 +185,13 @@ jobs:
     name: Publish GitHub Release
     needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
+    # Job-scoped, and it replaces the workflow default rather than adding to it,
+    # so `contents` is restated here. `id-token` and `attestations` are what the
+    # provenance step signs with.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
 
@@ -198,12 +205,33 @@ jobs:
           VERSION=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*([^+]+).*/\1/' | tr -d '[:space:]')
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
+      # The installers refuse to install anything whose digest is not in here,
+      # so this file is what makes `curl | sh` verifiable rather than hopeful.
+      # Flattened first: the download step nests each artifact under its job
+      # name, and a SHA256SUMS full of `./macos/x.dmg` paths cannot be checked
+      # against a file downloaded on its own.
+      - name: Collect artifacts and publish checksums
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find artifacts -type f \
+            \( -name 'dextr-*.dmg' -o -name 'dextr-*.zip' -o -name 'dextr-*.tar.gz' \) \
+            -exec mv {} dist/ \;
+          cd dist
+          sha256sum dextr-* > SHA256SUMS
+          echo "==> Published digests:"
+          cat SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'dist/dextr-*'
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: dextr ${{ steps.ver.outputs.tag }}
           generate_release_notes: true
           files: |
-            artifacts/macos/*.dmg
-            artifacts/windows/*.zip
-            artifacts/linux/*.tar.gz
+            dist/dextr-*
+            dist/SHA256SUMS

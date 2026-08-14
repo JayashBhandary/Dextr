@@ -11,6 +11,7 @@ import '../../domain/connection_secrets.dart';
 import '../data_source.dart';
 import '../sql_common/sql_query_builder.dart';
 import 'mysql_dialect.dart';
+import 'mysql_ssl.dart';
 
 class MysqlDataSource extends DataSource
     with RawQueryable, Writable, SchemaReadable, SchemaMutable, Transactional {
@@ -47,13 +48,21 @@ class MysqlDataSource extends DataSource
     return c;
   }
 
+  /// How this connection is configured to treat transport security.
+  ///
+  /// See [MysqlSslMode] for why there are two modes rather than three.
+  MysqlSslMode get sslMode => MysqlSslMode.fromConfig(
+    record.config['sslMode'],
+    legacySecure: record.config['secure'],
+  );
+
   @override
   Future<void> connect() async {
     final host = record.config['host'] as String? ?? 'localhost';
     final port = (record.config['port'] as num?)?.toInt() ?? 3306;
     final database = record.config['database'] as String?;
     final username = record.config['username'] as String? ?? 'root';
-    final secure = (record.config['secure'] as bool?) ?? false;
+    final ssl = sslMode;
     try {
       _conn = await MySQLConnection.createConnection(
         host: host,
@@ -61,7 +70,10 @@ class MysqlDataSource extends DataSource
         userName: username,
         password: secrets?.password ?? '',
         databaseName: database,
-        secure: secure,
+        // `secure: true` gets TLS without certificate verification, and that is
+        // all this driver has — the form says so where the mode is chosen, and
+        // [MysqlSslMode] records why. Do not read this as verified transport.
+        secure: ssl.encrypts,
       );
       await _conn!.connect();
       _activeDb = database;
