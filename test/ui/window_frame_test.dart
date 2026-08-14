@@ -97,10 +97,14 @@ void main() {
     );
   });
 
-  testWidgets('the band survives a resize, and the content takes the rest', (
+  testWidgets('the strip survives a resize, and a page stays clear of it', (
     tester,
   ) async {
-    final theme = await pump(tester, WindowCaptionStyle.customButtons);
+    final theme = await pump(
+      tester,
+      WindowCaptionStyle.customButtons,
+      insetPage: true,
+    );
     final bandHeight = theme.size(AstryxSizeToken.elementLg);
 
     for (final size in const <Size>[
@@ -116,14 +120,14 @@ void main() {
       expect(
         tester.getSize(find.byType(DragToMoveArea)).height,
         bandHeight,
-        reason: 'the band changed height at $size',
+        reason: 'the strip changed height at $size',
       );
       expect(
         tester.getTopLeft(find.text('page')).dy,
         greaterThanOrEqualTo(bandHeight),
-        reason: 'the page ran under the band at $size',
+        reason: 'the page ran under the strip at $size',
       );
-      // A band that overflowed would have thrown by now; this states it.
+      // A strip that overflowed would have thrown by now; this states it.
       expect(tester.takeException(), isNull, reason: 'overflow at $size');
     }
   });
@@ -182,10 +186,13 @@ void main() {
     expect(tester.getTopLeft(find.text('page')).dy, 0);
   });
 
-  testWidgets('the caption inset is nothing where the app draws the band', (
+  testWidgets('the app-drawn buttons get the same inset as the OS ones', (
     tester,
   ) async {
-    // The band already pushed the page down; insetting again would double it.
+    // The caption is an inset on every platform that has one, not a band on
+    // some of them: a band would push the router — and the overlay every menu
+    // portals into — down the window, and every anchored overlay in the app
+    // with it.
     await pump(
       tester,
       WindowCaptionStyle.customButtons,

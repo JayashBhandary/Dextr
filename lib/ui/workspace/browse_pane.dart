@@ -7,12 +7,14 @@ import 'package:path/path.dart' as p;
 
 import '../../connectors/data_source.dart';
 import '../../core/cell_value.dart';
+import '../../core/export/tabular_export.dart';
 import '../../core/query_spec.dart';
 import '../../state/active_source_provider.dart';
 import '../../state/schema_provider.dart';
 import '../../state/settings_provider.dart';
 import '../widgets/data_grid.dart';
 import '../widgets/dextr_icons.dart';
+import '../widgets/export_dialog.dart';
 import '../widgets/row_form.dart';
 
 /// A page of rows from one table or collection, with the row editor.
@@ -35,6 +37,7 @@ class _BrowsePaneState extends ConsumerState<BrowsePane> {
   bool _isObjectStorage = false;
 
   final AstryxDialogController _editor = AstryxDialogController();
+  final AstryxDialogController _export = AstryxDialogController();
   final RowFormController _form = RowFormController();
   ContainerSchema? _editorSchema;
   RowData? _editorRow;
@@ -51,6 +54,7 @@ class _BrowsePaneState extends ConsumerState<BrowsePane> {
   @override
   void dispose() {
     _editor.dispose();
+    _export.dispose();
     _form.dispose();
     super.dispose();
   }
@@ -216,6 +220,83 @@ class _BrowsePaneState extends ConsumerState<BrowsePane> {
     }
   }
 
+  // --- Export ---------------------------------------------------------------
+
+  /// The page that is on screen, with no round trip at all.
+  Future<ExportTable> _exportThisPage(int _) async =>
+      ExportTable(columns: _columns, rows: _rows);
+
+  /// Everything in the container, paged out of the connection.
+  ///
+  /// Pages at the size the user browses with rather than in one huge request:
+  /// the driver, the network and the server all cope better with a hundred
+  /// requests for a thousand rows than with one for a hundred thousand, and a
+  /// backend with a hard row cap would silently truncate the big one.
+  Future<ExportTable> _exportEveryRow(int rowLimit) async {
+    final source = await ref.read(activeDataSourceProvider.future);
+    if (source == null) throw StateError('No active source');
+
+    final rows = <RowData>[];
+    var offset = 0;
+    var truncated = false;
+    while (rows.length < rowLimit) {
+      final page = await source.listRows(
+        widget.container,
+        QuerySpec(limit: _limit, offset: offset),
+      );
+      if (page.items.isEmpty) break;
+      rows.addAll(page.items);
+      offset += page.items.length;
+      // A short page is the end of the data. Asking again would either repeat
+      // the last page or cost a round trip to learn nothing.
+      if (page.items.length < _limit) break;
+      if (rows.length >= rowLimit) {
+        truncated = true;
+        break;
+      }
+    }
+    if (rows.length > rowLimit) {
+      rows.removeRange(rowLimit, rows.length);
+      truncated = true;
+    }
+
+    // The columns of the data, falling back to the ones on screen for a
+    // container that came back empty.
+    final columns = rows.isEmpty ? _columns : rows.first.keys.toList();
+    return ExportTable(
+      columns: columns,
+      rows: rows,
+      truncated: truncated,
+    );
+  }
+
+  Widget _exportDialog() => ExportDialog(
+    controller: _export,
+    title: 'Export ${widget.container.name}',
+    description:
+        'The rows as a file. Nothing is written until the save dialog is '
+        'confirmed.',
+    baseName: widget.container.qualified,
+    tableName: widget.container.qualified,
+    sources: <ExportSource>[
+      ExportSource(
+        label: _rows.isEmpty
+            ? 'This page'
+            : 'This page (${_rows.length} rows)',
+        description: 'What is on screen. Already loaded, so this is immediate.',
+        load: _exportThisPage,
+      ),
+      ExportSource(
+        label: 'Every row',
+        description:
+            'Pages through the whole ${widget.container.subtype ?? 'table'}, '
+            '$_limit rows at a time.',
+        capped: true,
+        load: _exportEveryRow,
+      ),
+    ],
+  );
+
   // --- Build ----------------------------------------------------------------
 
   bool get _canGoBack => _offset > 0 && !_loading;
@@ -264,6 +345,7 @@ class _BrowsePaneState extends ConsumerState<BrowsePane> {
           ),
         ),
         _editorDialog(),
+        _exportDialog(),
       ],
     );
   }
@@ -325,6 +407,15 @@ class _BrowsePaneState extends ConsumerState<BrowsePane> {
           tabularNumbers: true,
         ),
         const Spacer(),
+        // Beside the primary action rather than in a menu: exporting what is on
+        // screen is the second thing anyone does with a table of rows.
+        AstryxButton(
+          label: 'Export',
+          variant: AstryxButtonVariant.secondary,
+          size: AstryxButtonSize.sm,
+          leading: const Icon(DextrIcons.export),
+          onPressed: _loading ? null : _export.show,
+        ),
         if (_isObjectStorage)
           AstryxButton(
             label: 'Upload',

@@ -6,11 +6,15 @@ import 'package:go_router/go_router.dart';
 
 import '../../state/active_source_provider.dart';
 import '../../state/connections_provider.dart';
+import '../../state/rail_provider.dart';
 import '../../state/workspace_provider.dart';
 import '../widgets/dextr_icons.dart';
 import '../workspace/workspace_page.dart';
 import 'sidebar_connections.dart';
 import 'window_frame.dart';
+
+/// The window width below which the rail moves into a drawer.
+const _compactBelow = 820.0;
 
 class AppShell extends ConsumerWidget {
   const AppShell({super.key});
@@ -19,6 +23,7 @@ class AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final activeId = ref.watch(activeConnectionIdProvider);
     final workspace = ref.read(workspaceProvider.notifier);
+    final collapsed = ref.watch(railCollapsedProvider);
 
     // Autofocus, because a key event is dispatched from whatever holds focus
     // and walks upwards: without a focused node inside the scope, ⌘W on a
@@ -30,20 +35,33 @@ class AppShell extends ConsumerWidget {
             workspace.closeActiveTab,
         const AstryxHotkey.mod(LogicalKeyboardKey.keyW, alt: true):
             workspace.closeAllTabs,
+        // The same key every editor collapses its file tree with, for the same
+        // reason: the rail is not what is being read while a query is written.
+        const AstryxHotkey.mod(LogicalKeyboardKey.keyB): () => ref
+            .read(railCollapsedProvider.notifier)
+            .update((value) => !value),
       },
-      child: AstryxAppShell(
-        navLabel: 'Connections',
-        sidebar: const ConnectionsRail(),
-        // Below this the rail moves into a drawer. Chosen for this rail: the
-        // widest connection name plus a table name indented under it stops
-        // fitting beside a usable table at about here.
-        compactBelow: 820,
-        // The rail is the only surface that runs up into the caption; the
-        // workspace beside it starts below the buttons like any other page.
-        child: WindowCaptionInset(
-          child: activeId == null
-              ? const _NoConnection()
-              : WorkspacePage(connectionId: activeId),
+      // The width is decided out here because the collapsed rail is only the
+      // column beside the content: a drawer is opened on purpose and has room
+      // for the labels, so it stays wide however the rail was left.
+      child: LayoutBuilder(
+        builder: (context, constraints) => AstryxAppShell(
+          navLabel: 'Connections',
+          sidebar: const ConnectionsRail(),
+          sidebarWidth: collapsed && constraints.maxWidth >= _compactBelow
+              ? railCollapsedWidth
+              : railExpandedWidth,
+          // Below this the rail moves into a drawer. Chosen for this rail: the
+          // widest connection name plus a table name indented under it stops
+          // fitting beside a usable table at about here.
+          compactBelow: _compactBelow,
+          // The rail is the only surface that runs up into the caption; the
+          // workspace beside it starts below the buttons like any other page.
+          child: WindowCaptionInset(
+            child: activeId == null
+                ? const _NoConnection()
+                : WorkspacePage(connectionId: activeId),
+          ),
         ),
       ),
     );

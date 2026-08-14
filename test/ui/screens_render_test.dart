@@ -10,6 +10,10 @@ import 'package:dextr/services/connections_repo.dart';
 import 'package:dextr/services/secrets_store.dart';
 import 'package:dextr/services/settings_repo.dart';
 import 'package:dextr/state/providers.dart';
+import 'package:dextr/state/rail_provider.dart';
+import 'package:dextr/ui/shell/sidebar_connections.dart';
+import 'package:dextr/ui/shell/window_frame.dart';
+import 'package:dextr/ui/widgets/connection_actions.dart';
 import 'package:dextr/ui/widgets/page_surface.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -130,6 +134,78 @@ void main() {
     expect(find.text('Outro'), findsOneWidget);
     // A null price is drawn as NULL rather than as an empty cell.
     expect(find.text('NULL'), findsWidgets);
+  });
+
+  testWidgets('every connection in the rail carries its own actions', (
+    tester,
+  ) async {
+    sizeWindow(tester);
+    await tester.pumpWidget(app());
+    await settle(tester);
+
+    // Nothing is open: the rail's menu is the point — these actions are
+    // reachable without opening the connection first.
+    expect(find.byType(ConnectionActionsMenu), findsOneWidget);
+
+    // Tapped by widget rather than by semantics label: a nav row wraps its
+    // whole content in `ExcludeSemantics`, so the trigger inside one has no
+    // semantics node of its own to find it by.
+    await tester.tap(find.byType(ConnectionActionsMenu));
+    await settle(tester);
+
+    expect(find.text('Edit connection'), findsOneWidget);
+    expect(find.text('Disconnect'), findsOneWidget);
+    expect(find.text('Delete connection'), findsOneWidget);
+
+    // The row is a button too, and the press belongs to the menu: opening the
+    // actions must not also open the connection.
+    expect(find.text('tracks'), findsNothing);
+  });
+
+  testWidgets('the rail collapses to its icons and back', (tester) async {
+    sizeWindow(tester);
+    await tester.pumpWidget(app());
+    await settle(tester);
+
+    final wide = tester.getSize(find.byType(ConnectionsRail)).width;
+    expect(wide, railExpandedWidth);
+    expect(find.text('catalogue.db'), findsWidgets);
+
+    // The button the rail offers, named by what it would do.
+    await tester.tap(find.bySemanticsLabel('Collapse the navigation'));
+    await settle(tester);
+
+    expect(tester.getSize(find.byType(ConnectionsRail)).width, lessThan(wide));
+    // The label is gone from the row and the connection is still reachable —
+    // the row keeps its name for a screen reader, and the icon is what is
+    // drawn.
+    expect(find.text('catalogue.db'), findsNothing);
+    expect(find.bySemanticsLabel('catalogue.db'), findsWidgets);
+    // The one action a rail this narrow still has to carry.
+    expect(find.bySemanticsLabel('New connection'), findsWidgets);
+
+    await tester.tap(find.bySemanticsLabel('Expand the navigation'));
+    await settle(tester);
+
+    expect(tester.getSize(find.byType(ConnectionsRail)).width, wide);
+    expect(find.text('catalogue.db'), findsWidgets);
+  });
+
+  testWidgets('the window frame has an overlay of its own', (tester) async {
+    sizeWindow(tester);
+    await tester.pumpWidget(app());
+    await settle(tester);
+
+    // The band is built above the router, so the navigator's overlay is below
+    // it, not above: without one of its own, the first tooltip its window
+    // buttons open throws `No Overlay widget found`.
+    expect(
+      find.ancestor(
+        of: find.byType(WindowFrame),
+        matching: find.byType(Overlay),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the schema and query views render for the same tab', (

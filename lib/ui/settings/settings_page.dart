@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/export/export_format.dart';
+import '../../domain/app_settings.dart';
 import '../../state/settings_provider.dart';
 import '../../theme/app_theme.dart';
 
@@ -154,6 +156,11 @@ class SettingsPage extends ConsumerWidget {
             ),
           ),
           AstryxSection(
+            title: 'Export',
+            showDivider: true,
+            child: _ExportDefaults(settings: settings, notifier: notifier),
+          ),
+          AstryxSection(
             title: 'Reset',
             child: _ResetButton(onReset: notifier.reset),
           ),
@@ -267,6 +274,83 @@ class _Swatch extends StatelessWidget {
 }
 
 /// Reset, behind a confirmation: it is one press that changes six settings.
+/// What every export dialog opens on.
+///
+/// Not the whole of the export dialog's options — the ones that are a habit
+/// rather than a decision. A format and a null placeholder are the same on every
+/// export somebody does; whether that particular JSON is indented is not.
+///
+/// The null placeholder is a text field rather than a choice because the answer
+/// is a string somebody's pipeline decided: `NULL`, `\N`, `(null)`, `-`.
+class _ExportDefaults extends StatefulWidget {
+  const _ExportDefaults({required this.settings, required this.notifier});
+
+  final AppSettings settings;
+  final SettingsNotifier notifier;
+
+  @override
+  State<_ExportDefaults> createState() => _ExportDefaultsState();
+}
+
+class _ExportDefaultsState extends State<_ExportDefaults> {
+  late final TextEditingController _nullText = TextEditingController(
+    text: widget.settings.exportNullText,
+  );
+
+  @override
+  void dispose() {
+    _nullText.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = widget.settings;
+
+    return AstryxVStack(
+      gap: AstryxSpacingToken.spacing5,
+      align: AstryxStackAlign.stretch,
+      children: <Widget>[
+        AstryxSelector<ExportFormat>(
+          label: 'Default format',
+          description: 'What the export dialog is set to when it opens.',
+          value: settings.exportFormat,
+          width: 260,
+          onChanged: (value) =>
+              widget.notifier.setExportFormat(value ?? ExportFormat.csv),
+          options: <AstryxSelectorEntry<ExportFormat>>[
+            for (final format in ExportFormat.values)
+              AstryxSelectorOption<ExportFormat>(
+                value: format,
+                label: format.label,
+                description: format.description,
+              ),
+          ],
+        ),
+        AstryxSwitch(
+          label: 'Header row by default',
+          description:
+              'Whether a CSV or TSV export starts with the column names.',
+          value: settings.exportIncludeHeader,
+          onChanged: widget.notifier.setExportIncludeHeader,
+        ),
+        AstryxTextInput(
+          label: 'Text for NULL',
+          description:
+              'What a CSV, TSV or markdown export writes where a value is '
+              'missing. Empty gives a blank cell; set something like NULL '
+              'where an empty string and a missing value must not look the '
+              'same.',
+          controller: _nullText,
+          width: 260,
+          placeholder: 'empty',
+          onChanged: widget.notifier.setExportNullText,
+        ),
+      ],
+    );
+  }
+}
+
 class _ResetButton extends StatefulWidget {
   const _ResetButton({required this.onReset});
 

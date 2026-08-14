@@ -2,6 +2,7 @@ import 'package:astryx_ui/astryx_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import '../core/export/export_format.dart';
 import '../domain/app_settings.dart';
 import '../theme/app_theme.dart';
 import 'providers.dart';
@@ -44,6 +45,15 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> setConfirmDeletes(bool v) =>
       _update(state.copyWith(confirmDeletes: v));
+
+  Future<void> setExportFormat(ExportFormat v) =>
+      _update(state.copyWith(exportFormat: v));
+
+  Future<void> setExportIncludeHeader(bool v) =>
+      _update(state.copyWith(exportIncludeHeader: v));
+
+  Future<void> setExportNullText(String v) =>
+      _update(state.copyWith(exportNullText: v));
 
   Future<void> reset() => _update(const AppSettings());
 }

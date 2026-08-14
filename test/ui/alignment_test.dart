@@ -15,11 +15,14 @@ import 'package:dextr/theme/app_theme.dart';
 import 'package:dextr/ui/connection_form/kind_picker.dart';
 import 'package:dextr/ui/shell/sidebar_connections.dart';
 import 'package:dextr/ui/shell/window_frame.dart';
+import 'package:dextr/ui/widgets/connection_actions.dart';
 import 'package:dextr/ui/widgets/dextr_icons.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:window_manager/window_manager.dart';
 
 /// Geometry, not content: the things that look wrong on screen while every
 /// widget is present and every test above still passes. A control that fills a
@@ -106,6 +109,70 @@ void main() {
     // content starts well into the right-hand half. One sized to the viewport
     // starts at the window's edge.
     expect(row.left, greaterThan(windowWidth / 2));
+  });
+
+  testWidgets('a rail row menu drops under the button it came from', (
+    tester,
+  ) async {
+    sizeWindow(tester);
+    await tester.pumpWidget(app());
+    await settle(tester);
+
+    final trigger = tester.getRect(
+      find.descendant(
+        of: find.byType(ConnectionActionsMenu),
+        matching: find.byType(AstryxIconButton),
+      ),
+    );
+    await tester.tap(find.byType(ConnectionActionsMenu));
+    await settle(tester);
+
+    final row = tester.getRect(find.text('Edit connection'));
+    // Aligned to the trigger's end edge, not its start: a menu wider than the
+    // button that hangs off the *start* edge runs out over the workspace
+    // beside the rail, which reads as belonging to the page rather than to the
+    // row it came from.
+    expect(row.right, lessThanOrEqualTo(trigger.right));
+    // And directly below it, rather than a band of empty rail away.
+    expect(row.top - trigger.bottom, lessThan(24));
+  });
+
+  testWidgets('the window caption does not push the menus down with it', (
+    tester,
+  ) async {
+    // On a platform that draws its own window controls. An overlay is
+    // positioned inside the *navigator's* overlay from an anchor measured in
+    // global coordinates, so anything that moves the router down the window —
+    // a caption band above it, rather than an inset over it — moves every menu
+    // in the application down by the same amount, away from what opened it.
+    // Put back inside the test rather than in a tear-down: the framework
+    // checks its debug variables when the body returns, before any tear-down
+    // has run.
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    try {
+      sizeWindow(tester);
+      await tester.pumpWidget(app());
+      await settle(tester);
+
+      final trigger = tester.getRect(
+        find.descendant(
+          of: find.byType(ConnectionActionsMenu),
+          matching: find.byType(AstryxIconButton),
+        ),
+      );
+      // The caption is there to be pushed down by, on this platform.
+      expect(find.byType(DragToMoveArea), findsOneWidget);
+
+      await tester.tap(find.byType(ConnectionActionsMenu));
+      await settle(tester);
+
+      expect(
+        tester.getRect(find.text('Edit connection')).top - trigger.bottom,
+        lessThan(24),
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('every backend card puts its icon on the same line', (

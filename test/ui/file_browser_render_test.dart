@@ -14,6 +14,8 @@ import 'package:dextr/services/secrets_store.dart';
 import 'package:dextr/services/settings_repo.dart';
 import 'package:dextr/state/active_source_provider.dart';
 import 'package:dextr/state/providers.dart';
+import 'package:dextr/ui/shell/tab_bar.dart';
+import 'package:dextr/ui/workspace/file_browser_pane.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -63,6 +65,13 @@ void main() {
     child: const DextrApp(),
   );
 
+  /// Scoped to the pane, because the rail lists the same bucket names and a
+  /// bare `find.text` cannot tell the two apart.
+  Finder inPane(String text) => find.descendant(
+    of: find.byType(FileBrowserPane),
+    matching: find.text(text),
+  );
+
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 8; i++) {
       await tester.runAsync(
@@ -109,6 +118,86 @@ void main() {
     // The trail is the way back out, and the listing is the folder's own.
     expect(find.text('uploads'), findsWidgets);
     expect(find.text('logo.png'), findsOneWidget);
+    expect(find.text('notes.txt'), findsNothing);
+  });
+
+  /// Opens the connection and nothing inside it, which is what pressing a
+  /// connection in a collapsed rail leaves you with.
+  Future<void> openConnection(WidgetTester tester) async {
+    final view = tester.view;
+    view.physicalSize = const Size(1280, 900);
+    view.devicePixelRatio = 1;
+    addTearDown(() {
+      view.resetPhysicalSize();
+      view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(app());
+    await settle(tester);
+    await tester.tap(find.text('assets').first);
+    await settle(tester);
+  }
+
+  testWidgets('the buckets are rows in the pane, not only in the rail', (
+    tester,
+  ) async {
+    await openConnection(tester);
+
+    // The way in that does not go through the rail.
+    await tester.tap(find.text('Browse buckets'));
+    await settle(tester);
+
+    expect(inPane('uploads'), findsOneWidget);
+    expect(inPane('archive'), findsOneWidget);
+    // Said in words, because a bucket and a folder draw the same glyph.
+    expect(inPane('bucket'), findsNWidgets(2));
+    // Nothing that only makes sense inside a bucket is offered here.
+    expect(find.text('Upload'), findsNothing);
+  });
+
+  testWidgets('pressing a bucket goes into it and the trail leads back', (
+    tester,
+  ) async {
+    await openConnection(tester);
+    await tester.tap(find.text('Browse buckets'));
+    await settle(tester);
+
+    await tester.tap(inPane('uploads'));
+    await settle(tester);
+
+    // Inside the bucket: its own listing, and Upload back on offer.
+    expect(find.text('notes.txt'), findsOneWidget);
+    expect(find.text('Upload'), findsWidgets);
+    expect(inPane('archive'), findsNothing);
+    // The tab followed the pane rather than still saying nothing is open.
+    expect(find.byType(WorkspaceTabBar), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(WorkspaceTabBar),
+        matching: find.text('uploads'),
+      ),
+      findsOneWidget,
+    );
+
+    // The connection is the root of the trail, and the way back to the buckets.
+    await tester.tap(inPane('assets'));
+    await settle(tester);
+
+    expect(inPane('archive'), findsOneWidget);
+    expect(find.text('notes.txt'), findsNothing);
+  });
+
+  testWidgets('up from the top of a bucket lands on the buckets', (
+    tester,
+  ) async {
+    // Opened from the rail this time: the same pane, entered the other way.
+    await openBucket(tester);
+    expect(find.text('notes.txt'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Back to the buckets'));
+    await settle(tester);
+
+    expect(inPane('archive'), findsOneWidget);
     expect(find.text('notes.txt'), findsNothing);
   });
 
@@ -166,6 +255,7 @@ class _FakeObjectStore extends DataSource with FileBrowsable {
   @override
   Future<List<ContainerRef>> listContainers() async => const <ContainerRef>[
     ContainerRef(name: 'uploads', subtype: 'bucket'),
+    ContainerRef(name: 'archive', subtype: 'bucket'),
   ];
 
   @override
@@ -183,6 +273,11 @@ class _FakeObjectStore extends DataSource with FileBrowsable {
     String path, {
     String? cursor,
   }) async {
+    // Only `uploads` has anything in it, so a test can tell which bucket the
+    // pane actually asked about.
+    if (container.name != 'uploads') {
+      return const FileListing(entries: <FileEntry>[]);
+    }
     if (path.isEmpty) {
       return FileListing(
         entries: <FileEntry>[

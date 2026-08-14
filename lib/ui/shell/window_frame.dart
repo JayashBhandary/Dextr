@@ -174,51 +174,40 @@ class _WindowFrameState extends State<WindowFrame> with WindowListener {
     // control size rather than being a number of its own.
     final height = theme.size(AstryxSizeToken.elementLg);
 
-    if (caption == WindowCaptionStyle.nativeButtons) {
-      // The OS puts its buttons *over* the app, so the app owes them room
-      // rather than a band. A band would be a strip of window-coloured nothing
-      // above every surface, including the one surface — the rail — that is
-      // meant to run the full height of the window.
-      //
-      // The drag strip is laid over the top instead. Everything under it is a
-      // caption inset, so there is nothing there for it to steal a press from.
-      return WindowCaptionScope(
-        inset: height,
-        child: Stack(
-          children: <Widget>[
-            Positioned.fill(child: widget.child),
-            PositionedDirectional(
-              top: 0,
-              start: 0,
-              end: 0,
-              height: height,
-              child: const DragToMoveArea(child: SizedBox.expand()),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // The app's own buttons have to be above the page rather than over it, and
-    // a band is what gives them a row of their own. Nothing underneath needs an
-    // inset, because the band already pushed it all down.
+    // The caption lies *over* the application rather than above it, whoever
+    // draws its buttons, and what is under it is held clear by an inset.
+    //
+    // Not a band in a column, which is what this was. A band pushes everything
+    // below it down, and the router — and so the navigator's `Overlay`, which
+    // every menu, tooltip and popover portals into — starts at the band's
+    // bottom edge instead of at the window's top. `AstryxAnchoredOverlay`
+    // measures its trigger in *global* coordinates and then positions inside
+    // that overlay, so every anchored thing in the app came out exactly one
+    // band-height too low. The band was also a strip of window-coloured
+    // nothing above the one surface — the rail — that is meant to run the full
+    // height of the window.
     return WindowCaptionScope(
-      inset: 0,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      inset: height,
+      child: Stack(
         children: <Widget>[
-          SizedBox(
+          Positioned.fill(child: widget.child),
+          PositionedDirectional(
+            top: 0,
+            start: 0,
+            end: 0,
             height: height,
             child: Row(
               children: <Widget>[
                 // The drag target is everything the buttons do not cover, so a
                 // press can never be both a drag and a click.
                 const Expanded(child: DragToMoveArea(child: SizedBox.expand())),
-                _WindowButtons(maximized: _maximized),
+                // Only where the OS stopped drawing them. On macOS they are
+                // still the platform's, floating over this same strip.
+                if (caption == WindowCaptionStyle.customButtons)
+                  _WindowButtons(maximized: _maximized),
               ],
             ),
           ),
-          Expanded(child: widget.child),
         ],
       ),
     );

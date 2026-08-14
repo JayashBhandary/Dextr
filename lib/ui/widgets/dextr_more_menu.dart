@@ -15,7 +15,9 @@ class DextrMoreMenu extends StatelessWidget {
     required this.label,
     required this.entries,
     this.width = 260,
+    this.align = AstryxOverlayAlign.end,
     this.icon = AstryxIconName.moreHorizontal,
+    this.iconWidget,
     this.size = AstryxButtonSize.sm,
     this.variant = AstryxButtonVariant.ghost,
     this.enabled = true,
@@ -31,8 +33,20 @@ class DextrMoreMenu extends StatelessWidget {
   /// carry, and narrow enough to still read as a menu.
   final double width;
 
-  /// The glyph on the trigger.
+  /// Which of the trigger's edges the menu lines up with.
+  ///
+  /// The end, because a "…" is the last thing in whatever row it belongs to: a
+  /// menu aligned to its *start* edge hangs off into the content beside it —
+  /// wider than its trigger, and reading as though it belongs to something
+  /// else. Aligned to the end it drops under the button it came from.
+  final AstryxOverlayAlign align;
+
+  /// The glyph on the trigger, from the design system's own registry.
   final AstryxIconName icon;
+
+  /// A glyph the registry does not have — one of [DextrIcons]. Takes precedence
+  /// over [icon] when given.
+  final Widget? iconWidget;
 
   /// The trigger's size.
   final AstryxButtonSize size;
@@ -49,16 +63,27 @@ class DextrMoreMenu extends StatelessWidget {
       label: label,
       entries: entries,
       width: width,
+      align: align,
       matchTriggerWidth: false,
-      triggerBuilder: (context, controller) => AstryxIconButton(
-        icon: icon,
-        label: label,
-        tooltip: label,
-        size: size,
-        variant: variant,
-        enabled: enabled,
-        onPressed: controller.toggle,
-      ),
+      triggerBuilder: (context, controller) => iconWidget == null
+          ? AstryxIconButton(
+              icon: icon,
+              label: label,
+              tooltip: label,
+              size: size,
+              variant: variant,
+              enabled: enabled,
+              onPressed: controller.toggle,
+            )
+          : AstryxIconButton.custom(
+              label: label,
+              tooltip: label,
+              size: size,
+              variant: variant,
+              enabled: enabled,
+              onPressed: controller.toggle,
+              child: iconWidget!,
+            ),
     );
   }
 }

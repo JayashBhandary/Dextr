@@ -1,10 +1,10 @@
 import 'package:astryx_ui/astryx_ui.dart';
 import 'package:flutter/widgets.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:path/path.dart' as p;
 
 import '../../connectors/data_source.dart';
 import '../../core/capabilities.dart';
+import '../../core/files/file_kind.dart';
 
 /// A Lucide glyph sized and coloured from the tokens.
 ///
@@ -81,43 +81,70 @@ abstract final class DextrIcons {
         _ => LucideIcons.table2,
       };
 
-  /// The icon for one entry in a file browser, from its name.
+  /// The icon for one entry in a file browser.
+  ///
+  /// Driven by [FileKind], which is the one place that decides what a file *is*.
+  /// This used to carry three extension tables of its own, so a format could be
+  /// previewable and still draw a blank page — or draw a document icon and have
+  /// no preview.
   static IconData forFile(FileEntry entry) {
     if (entry.isFolder) return LucideIcons.folder;
-    final ext = p.extension(entry.name).toLowerCase().replaceFirst('.', '');
-    const image = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg'};
-    const archive = {'zip', 'tar', 'gz', 'tgz', 'rar', '7z', 'bz2', 'xz'};
-    const code = {
-      'dart',
-      'js',
-      'ts',
-      'jsx',
-      'tsx',
-      'py',
-      'java',
-      'c',
-      'cpp',
-      'h',
-      'hpp',
-      'go',
-      'rs',
-      'rb',
-      'sh',
-      'sql',
-      'css',
-      'html',
-      'htm',
-      'xml',
+    return switch (FileKind.of(entry)) {
+      FileKind.image => LucideIcons.image,
+      FileKind.delimited => LucideIcons.fileSpreadsheet,
+      FileKind.spreadsheet => LucideIcons.fileSpreadsheet,
+      FileKind.document => LucideIcons.fileText,
+      FileKind.pdf => LucideIcons.fileText,
+      FileKind.video => LucideIcons.fileVideo,
+      FileKind.audio => LucideIcons.fileAudio,
+      FileKind.archive => LucideIcons.fileArchive,
+      // Text splits again by what the text is, because "a file of words" and "a
+      // file of code" are different things to someone scanning a bucket.
+      FileKind.text => _codeExtensions.contains(
+        FileKind.extensionOf(entry.name),
+      )
+          ? LucideIcons.fileCode
+          : _dataExtensions.contains(FileKind.extensionOf(entry.name))
+          ? LucideIcons.fileJson
+          : LucideIcons.fileText,
+      FileKind.binary => LucideIcons.file,
     };
-    const data = {'json', 'csv', 'tsv', 'yaml', 'yml', 'toml', 'ini', 'env'};
-    if (image.contains(ext)) return LucideIcons.image;
-    if (archive.contains(ext)) return LucideIcons.fileArchive;
-    if (code.contains(ext)) return LucideIcons.fileCode;
-    if (data.contains(ext)) return LucideIcons.fileJson;
-    if (ext == 'pdf') return LucideIcons.fileText;
-    return LucideIcons.file;
   }
 
+  static const _codeExtensions = <String>{
+    'dart',
+    'js',
+    'ts',
+    'jsx',
+    'tsx',
+    'py',
+    'java',
+    'c',
+    'cpp',
+    'h',
+    'hpp',
+    'go',
+    'rs',
+    'rb',
+    'sh',
+    'sql',
+    'css',
+    'html',
+    'htm',
+    'xml',
+  };
+
+  static const _dataExtensions = <String>{
+    'json',
+    'jsonl',
+    'yaml',
+    'yml',
+    'toml',
+    'ini',
+    'env',
+  };
+
+  static const alert = LucideIcons.circleAlert;
   static const bucket = LucideIcons.folder;
   static const columnKey = LucideIcons.key;
   static const column = LucideIcons.columns3;
@@ -125,7 +152,9 @@ abstract final class DextrIcons {
   static const delete = LucideIcons.trash2;
   static const download = LucideIcons.download;
   static const edit = LucideIcons.pencil;
+  static const export = LucideIcons.fileOutput;
   static const folderPlus = LucideIcons.folderPlus;
+  static const info = LucideIcons.info;
   static const insert = LucideIcons.plus;
   static const link = LucideIcons.link;
   static const move = LucideIcons.cornerUpRight;

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:astryx_ui/astryx_ui.dart';
 
+import '../core/export/export_format.dart';
 import '../theme/app_theme.dart';
 
 /// User-configurable application settings, persisted as JSON.
@@ -13,6 +14,9 @@ class AppSettings {
     this.density = AstryxTableDensity.compact,
     this.pageSize = 100,
     this.confirmDeletes = true,
+    this.exportFormat = ExportFormat.csv,
+    this.exportIncludeHeader = true,
+    this.exportNullText = '',
   });
 
   /// Light, dark, or follow the OS.
@@ -33,6 +37,28 @@ class AppSettings {
   /// Ask for confirmation before destructive actions.
   final bool confirmDeletes;
 
+  /// Which format an export dialog opens on. A preference rather than a
+  /// constant because whoever exports CSV every day exports CSV every day.
+  final ExportFormat exportFormat;
+
+  /// Whether a delimited export starts with a row of column names.
+  final bool exportIncludeHeader;
+
+  /// What a delimited or markdown export writes where a value is NULL.
+  ///
+  /// Empty by default, which is what a spreadsheet shows for a blank cell. A
+  /// pipeline that has to tell an empty string from a missing value wants
+  /// something like `NULL` or `\N` here, and setting it once is better than
+  /// remembering it per export.
+  final String exportNullText;
+
+  /// The defaults an export dialog opens with.
+  ExportOptions get exportOptions => ExportOptions(
+    format: exportFormat,
+    includeHeader: exportIncludeHeader,
+    nullText: exportNullText,
+  );
+
   /// The rhythm lists and rails take, which follows the table density: a user
   /// who asked for dense rows did not mean dense rows only in tables.
   AstryxItemDensity get itemDensity => density == AstryxTableDensity.spacious
@@ -47,6 +73,9 @@ class AppSettings {
     AstryxTableDensity? density,
     int? pageSize,
     bool? confirmDeletes,
+    ExportFormat? exportFormat,
+    bool? exportIncludeHeader,
+    String? exportNullText,
   }) => AppSettings(
     colorMode: colorMode ?? this.colorMode,
     theme: theme ?? this.theme,
@@ -54,6 +83,9 @@ class AppSettings {
     density: density ?? this.density,
     pageSize: pageSize ?? this.pageSize,
     confirmDeletes: confirmDeletes ?? this.confirmDeletes,
+    exportFormat: exportFormat ?? this.exportFormat,
+    exportIncludeHeader: exportIncludeHeader ?? this.exportIncludeHeader,
+    exportNullText: exportNullText ?? this.exportNullText,
   );
 
   Map<String, Object?> toJson() => {
@@ -63,6 +95,9 @@ class AppSettings {
     'density': density.name,
     'pageSize': pageSize,
     'confirmDeletes': confirmDeletes,
+    'exportFormat': exportFormat.name,
+    'exportIncludeHeader': exportIncludeHeader,
+    'exportNullText': exportNullText,
   };
 
   /// Reads both the current shape and the pre-astryx one: `themeMode` was the
@@ -87,6 +122,12 @@ class AppSettings {
       ),
       pageSize: (j['pageSize'] as num?)?.toInt() ?? 100,
       confirmDeletes: j['confirmDeletes'] as bool? ?? true,
+      exportFormat: ExportFormat.values.firstWhere(
+        (f) => f.name == j['exportFormat'],
+        orElse: () => ExportFormat.csv,
+      ),
+      exportIncludeHeader: j['exportIncludeHeader'] as bool? ?? true,
+      exportNullText: j['exportNullText'] as String? ?? '',
     );
   }
 

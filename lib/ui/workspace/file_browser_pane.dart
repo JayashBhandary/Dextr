@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:astryx_ui/astryx_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
@@ -8,27 +6,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../connectors/data_source.dart';
+import '../../core/cell_value.dart';
+import '../../core/export/export_format.dart';
+import '../../core/export/tabular_export.dart';
+import '../../core/files/file_kind.dart';
 import '../../state/active_source_provider.dart';
+import '../../state/providers.dart';
 import '../../state/settings_provider.dart';
+import '../../state/workspace_provider.dart';
 import '../widgets/dextr_icons.dart';
 import '../widgets/dextr_more_menu.dart';
+import '../widgets/export_dialog.dart';
+import 'file_preview.dart';
 
 enum _SortKey { name, size, modified }
 
 /// Hierarchical file browser for any [FileBrowsable] source (S3/MinIO today;
 /// Drive/Dropbox later). Talks only to the [FileBrowsable] contract and gates
 /// every action on [FileBrowsable.fileOps].
+///
+/// **The buckets are the top level of this pane, not only of the rail.** A
+/// bucket used to be reachable in one place — a row in the rail — so collapsing
+/// the rail took the whole store out of reach. Here they are folder rows like
+/// any other, one level above the prefixes inside them, and walking into one
+/// points the tab at it so the rail, the tab strip and the pane all agree about
+/// where the user is.
 class FileBrowserPane extends ConsumerStatefulWidget {
-  const FileBrowserPane({super.key, required this.container});
+  const FileBrowserPane({super.key, this.container, this.tabId});
 
-  final ContainerRef container;
+  /// The bucket to open in. Null starts at the list of buckets, which is what
+  /// the pane shows when nothing has been picked yet.
+  final ContainerRef? container;
+
+  /// The tab this pane belongs to, so navigating can move the tab with it.
+  /// Null leaves the tab alone — for a pane mounted outside the workspace.
+  final String? tabId;
 
   @override
   ConsumerState<FileBrowserPane> createState() => _FileBrowserPaneState();
 }
 
 class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
-  String _path = ''; // current folder prefix, '' = container root
+  /// The bucket being looked inside, or null at the list of buckets.
+  ContainerRef? _bucket;
+
+  String _path = ''; // current folder prefix, '' = bucket root
   List<FileEntry> _entries = const <FileEntry>[];
   Set<Object> _selected = const <Object>{};
   Set<FileOp> _ops = const <FileOp>{};
@@ -51,17 +73,37 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
   final AstryxDialogController _confirmDelete = AstryxDialogController();
   List<String> _pendingDelete = const <String>[];
 
+  final AstryxDialogController _exportListing = AstryxDialogController();
+
   final AstryxDialogController _previewDialog = AstryxDialogController();
+
+  /// Which row the preview is showing. The dialog owns everything else about it
+  /// — the fetch, the parse, the errors — so this pane no longer has to know
+  /// which formats can be drawn.
   FileEntry? _previewEntry;
-  FileBytes? _previewData;
-  Object? _previewError;
-  bool _previewLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _bucket = widget.container;
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
+
+  @override
+  void didUpdateWidget(FileBrowserPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Compared by name, and only reloaded when it actually differs: this pane is
+    // what *writes* the tab's container when the user walks into a bucket, so an
+    // unguarded adopt-and-reload here would reload on its own navigation.
+    if (widget.container?.name != _bucket?.name) {
+      _bucket = widget.container;
+      _path = '';
+      _load();
+    }
+  }
+
+  /// Whether the pane is showing buckets rather than what is inside one.
+  bool get _atBucketList => _bucket == null;
 
   @override
   void dispose() {
@@ -69,6 +111,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
     _prompt.dispose();
     _promptValue.dispose();
     _confirmDelete.dispose();
+    _exportListing.dispose();
     _previewDialog.dispose();
     super.dispose();
   }
@@ -82,6 +125,13 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
       ),
     );
   }
+
+  /// The bucket a file operation acts in.
+  ///
+  /// Non-null by construction: nothing that calls this is offered at the bucket
+  /// list, because none of it means anything there — there is no "upload into
+  /// the list of buckets".
+  ContainerRef get _inBucket => _bucket!;
 
   Future<FileBrowsable?> _src() async {
     final source = await ref.read(activeDataSourceProvider.future);
@@ -98,14 +148,34 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
       final source = await _src();
       if (source == null) throw StateError('Source is not file-browsable');
       _ops = source.fileOps;
-      final listing = await source.listEntries(widget.container, _path);
-      _entries = listing.entries;
+      final bucket = _bucket;
+      _entries = bucket == null
+          ? _bucketRows(await source.listContainers())
+          : (await source.listEntries(bucket, _path)).entries;
     } catch (e) {
       _error = e;
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  /// Buckets as folder rows.
+  ///
+  /// A bucket is a folder as far as this table is concerned — something with a
+  /// name that you press to go inside — and giving it a row of its own kind
+  /// would mean a second set of every rule about sorting, filtering and icons.
+  /// It carries no size or date because a store does not report either for a
+  /// bucket without walking the whole thing.
+  static List<FileEntry> _bucketRows(List<ContainerRef> buckets) =>
+      <FileEntry>[
+        for (final bucket in buckets)
+          FileEntry(
+            name: bucket.name,
+            path: '${bucket.name}/',
+            isFolder: true,
+            contentType: bucket.subtype ?? 'bucket',
+          ),
+      ];
 
   void _navigateTo(String path) {
     setState(() {
@@ -114,6 +184,46 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
       _filter.clear();
     });
     _load();
+  }
+
+  /// Goes into a bucket, and takes the tab with it.
+  void _openBucket(String name) {
+    final bucket = ContainerRef(name: name, subtype: 'bucket');
+    setState(() {
+      _bucket = bucket;
+      _path = '';
+      _query = '';
+      _filter.clear();
+    });
+    _reportContainer(bucket);
+    _load();
+  }
+
+  /// Back out to the buckets.
+  void _showBuckets() {
+    setState(() {
+      _bucket = null;
+      _path = '';
+      _query = '';
+      _filter.clear();
+    });
+    _reportContainer(null);
+    _load();
+  }
+
+  /// Tells the workspace where the pane went, so the tab's title and the rail's
+  /// highlight follow the pane instead of contradicting it.
+  ///
+  /// Deferred a frame: this runs from a press handler, and writing to a store
+  /// half the application watches while a build is in flight is how "setState
+  /// called during build" happens.
+  void _reportContainer(ContainerRef? container) {
+    final tabId = widget.tabId;
+    if (tabId == null) return;
+    final notifier = ref.read(workspaceProvider.notifier);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (notifier.mounted) notifier.setTabContainer(tabId, container);
+    });
   }
 
   // --- Filtering and sorting ------------------------------------------------
@@ -177,7 +287,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
     onSubmit: (name) async {
       try {
         final source = await _src();
-        await source!.createFolder(widget.container, '$_path$name');
+        await source!.createFolder(_inBucket, '$_path$name');
         _toast('Created $name/');
         await _load();
       } catch (e) {
@@ -199,7 +309,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
         final path = file.path;
         if (path == null) continue;
         await source!.uploadFile(
-          widget.container,
+          _inBucket,
           '$_path${p.basename(path)}',
           path,
         );
@@ -212,16 +322,16 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
     }
   }
 
-  /// Downloads into a folder the user picks.
+  /// Downloads into a folder the user picks — the unstructured export.
   ///
-  /// file_picker 12's `saveFile` writes bytes it is given rather than handing
-  /// back a path, and a download that had to be buffered in memory first would
-  /// cap the size of file this tool can fetch. Asking for the folder keeps the
-  /// transfer streaming to disk.
+  /// A folder rather than a save dialog per file: `saveFile` writes bytes it is
+  /// handed, and a download buffered in memory first would cap the size of file
+  /// this tool can fetch. Asking for the folder keeps the transfer streaming to
+  /// disk through the connector.
   Future<void> _download(List<FileEntry> entries) async {
     final files = entries.where((e) => !e.isFolder).toList();
     if (files.isEmpty) return;
-    final directory = await FilePicker.getDirectoryPath(
+    final directory = await ref.read(exportServiceProvider).chooseFolder(
       dialogTitle: files.length == 1
           ? 'Where should ${files.single.name} go?'
           : 'Save ${files.length} files into folder',
@@ -232,7 +342,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
       var saved = 0;
       for (final entry in files) {
         await source!.downloadFile(
-          widget.container,
+          _inBucket,
           entry.path,
           p.join(directory, entry.name),
         );
@@ -259,7 +369,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
   Future<void> _delete(List<String> paths) async {
     try {
       final source = await _src();
-      await source!.deleteEntries(widget.container, paths);
+      await source!.deleteEntries(_inBucket, paths);
       _toast(
         paths.length == 1 ? 'Deleted 1 item' : 'Deleted ${paths.length} items',
       );
@@ -279,7 +389,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
       final to = entry.isFolder ? '$_path$name/' : '$_path$name';
       try {
         final source = await _src();
-        await source!.moveEntry(widget.container, entry.path, to);
+        await source!.moveEntry(_inBucket, entry.path, to);
         _toast('Renamed to $name');
         await _load();
       } catch (e) {
@@ -300,9 +410,9 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
       try {
         final source = await _src();
         if (move) {
-          await source!.moveEntry(widget.container, entry.path, to);
+          await source!.moveEntry(_inBucket, entry.path, to);
         } else {
-          await source!.copyEntry(widget.container, entry.path, to);
+          await source!.copyEntry(_inBucket, entry.path, to);
         }
         _toast(move ? 'Moved to $to' : 'Copied to $to');
         await _load();
@@ -315,7 +425,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
   Future<void> _share(FileEntry entry) async {
     try {
       final source = await _src();
-      final url = await source!.shareLink(widget.container, entry.path);
+      final url = await source!.shareLink(_inBucket, entry.path);
       if (url == null) {
         _toast('This source does not offer share links', error: true);
         return;
@@ -327,30 +437,100 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
     }
   }
 
-  // --- Preview ---------------------------------------------------------------
+  // --- Exporting the listing -------------------------------------------------
 
-  Future<void> _preview(FileEntry entry) async {
-    setState(() {
-      _previewEntry = entry;
-      _previewData = null;
-      _previewError = null;
-      _previewLoading = _isPreviewable(entry);
-    });
-    _previewDialog.show();
-    if (!_isPreviewable(entry)) return;
-    try {
-      final source = await _src();
-      final data = await source!.readBytes(widget.container, entry.path);
-      if (mounted) setState(() => _previewData = data);
-    } catch (e) {
-      if (mounted) setState(() => _previewError = e);
-    } finally {
-      if (mounted) setState(() => _previewLoading = false);
-    }
+  /// The folder listing as rows.
+  ///
+  /// Not the files — those are the download above. This is the inventory: what
+  /// is in the bucket, how big, when it changed. An object store with fifty
+  /// thousand keys is a thing people need a spreadsheet of, and reading it off
+  /// the screen a page at a time is not that.
+  ExportTable _listingTable(List<FileEntry> entries) => ExportTable(
+    columns: const <String>[
+      'name',
+      'path',
+      'kind',
+      'size_bytes',
+      'modified',
+      'content_type',
+      'etag',
+    ],
+    rows: <RowData>[
+      for (final entry in entries)
+        <String, CellValue>{
+          'name': StringCell(entry.name),
+          'path': StringCell(entry.path),
+          'kind': StringCell(entry.isFolder ? 'folder' : 'file'),
+          'size_bytes': entry.size == null
+              ? const NullCell()
+              : NumCell(entry.size!),
+          'modified': entry.modified == null
+              ? const NullCell()
+              : TimestampCell(entry.modified!),
+          'content_type': entry.contentType == null
+              ? const NullCell()
+              : StringCell(entry.contentType!),
+          'etag': entry.etag == null
+              ? const NullCell()
+              : StringCell(entry.etag!),
+        },
+    ],
+  );
+
+  Widget _exportListingHost() {
+    final visible = _visible;
+    final selected = _entries.where((e) => _selected.contains(e.path)).toList();
+
+    return ExportDialog(
+      controller: _exportListing,
+      title: _atBucketList ? 'Export the buckets' : 'Export the listing',
+      description: _atBucketList
+          ? 'Every bucket in this connection, as a file.'
+          : 'What is in this folder, as a file. To export the objects '
+                'themselves, use Download.',
+      baseName: <String>[
+        _bucket?.name ?? 'buckets',
+        if (_path.isNotEmpty) _path,
+        'listing',
+      ].join('-'),
+      // No SQL: a folder listing is not rows of a table anyone would insert it
+      // into, and a script that pretended otherwise would name a table that
+      // does not exist.
+      formats: const <ExportFormat>[
+        ExportFormat.csv,
+        ExportFormat.tsv,
+        ExportFormat.json,
+        ExportFormat.jsonl,
+        ExportFormat.markdown,
+      ],
+      sources: <ExportSource>[
+        ExportSource(
+          label: _query.isEmpty
+              ? _atBucketList
+                    ? 'Every bucket (${visible.length})'
+                    : 'This folder (${visible.length} items)'
+              : 'The ${visible.length} matches for “$_query”',
+          description: 'One level, exactly as the table shows it.',
+          load: (_) async => _listingTable(visible),
+        ),
+        if (selected.isNotEmpty)
+          ExportSource(
+            label: selected.length == 1
+                ? 'The selected item'
+                : 'The ${selected.length} selected items',
+            description: 'Only the rows that are ticked.',
+            load: (_) async => _listingTable(selected),
+          ),
+      ],
+    );
   }
 
-  static bool _isPreviewable(FileEntry entry) =>
-      !entry.isFolder && (_isImage(entry.name) || _isText(entry.name));
+  // --- Preview ---------------------------------------------------------------
+
+  void _preview(FileEntry entry) {
+    setState(() => _previewEntry = entry);
+    _previewDialog.show();
+  }
 
   // --- Build -----------------------------------------------------------------
 
@@ -369,7 +549,9 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
         if (_selected.isNotEmpty) _selectionBanner(),
         if (_loading)
           AstryxProgressBar(
-            label: 'Listing ${widget.container.name}',
+            label: _bucket == null
+                ? 'Listing the buckets'
+                : 'Listing ${_bucket!.name}',
             showLabel: false,
           ),
         if (error != null)
@@ -382,6 +564,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
         Expanded(child: _table(visible, density)),
         _promptHost(),
         _deleteHost(),
+        _exportListingHost(),
         _previewHost(),
       ],
     );
@@ -389,18 +572,35 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
 
   Widget _breadcrumbs() {
     final segments = _path.split('/').where((s) => s.isNotEmpty).toList();
+    final source = ref.watch(activeDataSourceProvider).value;
+    final bucket = _bucket;
     var accumulated = '';
+
     return AstryxBreadcrumbs(
       label: 'Folder path',
       items: <AstryxBreadcrumb>[
+        // The connection is the root of the trail now, because the buckets are
+        // a level of this pane. It is also the way back to them, which is what a
+        // reader with the rail collapsed has instead of the rail.
         AstryxBreadcrumb(
-          label: widget.container.name,
-          icon: const DextrIcon(
-            DextrIcons.bucket,
+          label: source?.displayName ?? 'Buckets',
+          icon: DextrIcon(
+            source == null
+                ? DextrIcons.bucket
+                : DextrIcons.forKind(source.kind),
             color: AstryxIconColor.secondary,
           ),
-          onPressed: _path.isEmpty ? null : () => _navigateTo(''),
+          onPressed: _atBucketList ? null : _showBuckets,
         ),
+        if (bucket != null)
+          AstryxBreadcrumb(
+            label: bucket.name,
+            icon: const DextrIcon(
+              DextrIcons.bucket,
+              color: AstryxIconColor.secondary,
+            ),
+            onPressed: _path.isEmpty ? null : () => _navigateTo(''),
+          ),
         for (final segment in segments)
           () {
             accumulated = '$accumulated$segment/';
@@ -420,16 +620,22 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
       mainAxisSize: MainAxisSize.max,
       children: <Widget>[
         AstryxToolbar(
-          label: 'Folder',
+          label: _atBucketList ? 'Buckets' : 'Folder',
           children: <Widget>[
             AstryxIconButton.custom(
-              label: 'Up one folder',
-              tooltip: 'Up one folder',
+              // The last step up is out of the bucket and into the list of
+              // them, not a dead button at the top of a bucket.
+              label: _path.isEmpty ? 'Back to the buckets' : 'Up one folder',
+              tooltip: _path.isEmpty ? 'Back to the buckets' : 'Up one folder',
               variant: AstryxButtonVariant.ghost,
               size: AstryxButtonSize.sm,
-              onPressed: _path.isEmpty || _loading
+              onPressed: _atBucketList || _loading
                   ? null
                   : () {
+                      if (_path.isEmpty) {
+                        _showBuckets();
+                        return;
+                      }
                       final segments =
                           _path.split('/').where((s) => s.isNotEmpty).toList()
                             ..removeLast();
@@ -447,7 +653,10 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
               onPressed: _loading ? null : _load,
               child: const Icon(DextrIcons.refresh),
             ),
-            if (_ops.contains(FileOp.makeFolder))
+            // A folder is made inside a bucket. Making a *bucket* is another
+            // operation with its own rules — region, policy, versioning — and
+            // pretending this button does it would be a lie.
+            if (!_atBucketList && _ops.contains(FileOp.makeFolder))
               AstryxIconButton.custom(
                 label: 'New folder',
                 tooltip: 'New folder',
@@ -456,13 +665,25 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
                 onPressed: _loading ? null : _newFolder,
                 child: const Icon(DextrIcons.folderPlus),
               ),
+            AstryxIconButton.custom(
+              label: _atBucketList
+                  ? 'Export the bucket list'
+                  : 'Export this listing',
+              tooltip: 'Export listing',
+              variant: AstryxButtonVariant.ghost,
+              size: AstryxButtonSize.sm,
+              onPressed: _loading ? null : _exportListing.show,
+              child: const Icon(DextrIcons.export),
+            ),
           ],
         ),
         Expanded(
           child: AstryxTextInput(
-            label: 'Filter this folder',
+            label: _atBucketList ? 'Filter the buckets' : 'Filter this folder',
             labelHidden: true,
-            placeholder: 'Filter this folder…',
+            placeholder: _atBucketList
+                ? 'Filter the buckets…'
+                : 'Filter this folder…',
             size: AstryxInputSize.sm,
             controller: _filter,
             showClear: true,
@@ -470,20 +691,22 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
             onChanged: (value) => setState(() => _query = value),
           ),
         ),
-        AstryxSelector<_SortKey>(
-          label: 'Sort files by',
-          labelHidden: true,
-          value: _sort,
-          width: 150,
-          size: AstryxInputSize.sm,
-          onChanged: (value) => setState(() => _sort = value ?? _SortKey.name),
-          options: const <AstryxSelectorEntry<_SortKey>>[
-            AstryxSelectorOption(value: _SortKey.name, label: 'Name'),
-            AstryxSelectorOption(value: _SortKey.size, label: 'Size'),
-            AstryxSelectorOption(value: _SortKey.modified, label: 'Modified'),
-          ],
-        ),
-        if (_ops.contains(FileOp.upload))
+        if (!_atBucketList)
+          AstryxSelector<_SortKey>(
+            label: 'Sort files by',
+            labelHidden: true,
+            value: _sort,
+            width: 150,
+            size: AstryxInputSize.sm,
+            onChanged: (value) =>
+                setState(() => _sort = value ?? _SortKey.name),
+            options: const <AstryxSelectorEntry<_SortKey>>[
+              AstryxSelectorOption(value: _SortKey.name, label: 'Name'),
+              AstryxSelectorOption(value: _SortKey.size, label: 'Size'),
+              AstryxSelectorOption(value: _SortKey.modified, label: 'Modified'),
+            ],
+          ),
+        if (!_atBucketList && _ops.contains(FileOp.upload))
           AstryxButton(
             label: 'Upload',
             variant: AstryxButtonVariant.primary,
@@ -509,14 +732,22 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
           : '${_selected.length} items selected',
       onDismiss: () => setState(() => _selected = const <Object>{}),
       actions: <Widget>[
-        if (_ops.contains(FileOp.download))
+        if (!_atBucketList && _ops.contains(FileOp.download))
           AstryxButton(
             label: 'Download',
             size: AstryxButtonSize.sm,
             leading: const Icon(DextrIcons.download),
             onPressed: () => _download(selectedEntries),
           ),
-        if (_ops.contains(FileOp.delete))
+        // The rows about these items rather than the items themselves — two
+        // different exports, named differently so they cannot be confused.
+        AstryxButton(
+          label: 'Export listing',
+          size: AstryxButtonSize.sm,
+          leading: const Icon(DextrIcons.export),
+          onPressed: _exportListing.show,
+        ),
+        if (!_atBucketList && _ops.contains(FileOp.delete))
           AstryxButton(
             label: 'Delete',
             variant: AstryxButtonVariant.destructive,
@@ -531,29 +762,49 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
 
   Widget _table(List<FileEntry> entries, AstryxTableDensity density) {
     return AstryxTable<FileEntry>(
-      label:
-          'Files in ${widget.container.name}${_path.isEmpty ? '' : '/$_path'}',
+      label: _atBucketList
+          ? 'Buckets'
+          : 'Files in ${_inBucket.name}${_path.isEmpty ? '' : '/$_path'}',
       rows: entries,
       density: density,
       keyOf: (entry) => entry.path,
-      rowLabelOf: (entry) =>
-          entry.isFolder ? 'folder ${entry.name}' : entry.name,
-      selectionMode: AstryxTableSelectionMode.multiple,
+      rowLabelOf: (entry) => _atBucketList
+          ? 'bucket ${entry.name}'
+          : entry.isFolder
+          ? 'folder ${entry.name}'
+          : entry.name,
+      // No tick boxes on the buckets: none of what a selection is for here —
+      // download, delete, move — is something to do to a bucket from this pane.
+      selectionMode: _atBucketList
+          ? AstryxTableSelectionMode.none
+          : AstryxTableSelectionMode.multiple,
       selected: _selected,
       onSelectionChanged: (selected) => setState(() => _selected = selected),
-      onRowPressed: (entry) =>
-          entry.isFolder ? _navigateTo(entry.path) : _preview(entry),
+      onRowPressed: (entry) => _atBucketList
+          ? _openBucket(entry.name)
+          : entry.isFolder
+          ? _navigateTo(entry.path)
+          : _preview(entry),
       rowActionsBuilder: _rowActions,
       rowActionsWidth: 48,
       emptyState: AstryxEmptyState(
         icon: const Icon(DextrIcons.bucket),
-        title: _query.isEmpty ? 'Empty folder' : 'No matches',
-        description: _query.isEmpty
-            ? 'Upload something, or create a folder to organise it first.'
-            : 'Nothing here matches “$_query”.',
+        title: _query.isNotEmpty
+            ? 'No matches'
+            : _atBucketList
+            ? 'No buckets'
+            : 'Empty folder',
+        description: _query.isNotEmpty
+            ? 'Nothing here matches “$_query”.'
+            : _atBucketList
+            ? 'This connection has no buckets, or the key it uses cannot list '
+                  'them.'
+            : 'Upload something, or create a folder to organise it first.',
         size: AstryxEmptyStateSize.compact,
         actions: <Widget>[
-          if (_query.isEmpty && _ops.contains(FileOp.upload))
+          if (_query.isEmpty &&
+              !_atBucketList &&
+              _ops.contains(FileOp.upload))
             AstryxButton(
               label: 'Upload',
               variant: AstryxButtonVariant.primary,
@@ -571,10 +822,18 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
             gap: AstryxSpacingToken.spacing2,
             children: <Widget>[
               DextrIcon(
-                DextrIcons.forFile(entry),
+                _atBucketList ? DextrIcons.bucket : DextrIcons.forFile(entry),
                 color: AstryxIconColor.secondary,
               ),
               Flexible(child: AstryxText(entry.name, maxLines: 1)),
+              // What kind of thing this row is, said in words rather than left
+              // to the glyph — a bucket and a folder draw the same icon, and at
+              // this level every row is the former.
+              if (_atBucketList)
+                AstryxBadge(
+                  entry.contentType ?? 'bucket',
+                  variant: AstryxBadgeVariant.neutral,
+                ),
             ],
           ),
         ),
@@ -586,7 +845,7 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
           cellBuilder: (context, entry) => entry.isFolder || entry.size == null
               ? const AstryxText('—', color: AstryxTextColor.disabled)
               : AstryxText(
-                  _humanSize(entry.size!),
+                  humanFileSize(entry.size!),
                   type: AstryxTextType.supporting,
                   tabularNumbers: true,
                 ),
@@ -604,6 +863,28 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
   }
 
   Widget _rowActions(BuildContext context, FileEntry entry) {
+    // A bucket has one action from here, and it is the one the row already does.
+    // Renaming, moving or deleting a bucket is a different operation from doing
+    // it to a key inside one, and offering the key's version would be wrong.
+    if (_atBucketList) {
+      return DextrMoreMenu(
+        label: 'Actions for ${entry.name}',
+        width: 200,
+        entries: <AstryxMenuEntry>[
+          AstryxMenuItem(
+            label: 'Open',
+            icon: const Icon(DextrIcons.bucket),
+            onSelected: () => _openBucket(entry.name),
+          ),
+          AstryxMenuItem(
+            label: 'Export the bucket list…',
+            icon: const Icon(DextrIcons.export),
+            onSelected: _exportListing.show,
+          ),
+        ],
+      );
+    }
+
     return DextrMoreMenu(
       label: 'Actions for ${entry.name}',
       entries: <AstryxMenuEntry>[
@@ -705,209 +986,23 @@ class _FileBrowserPaneState extends ConsumerState<FileBrowserPane> {
 
   Widget _previewHost() {
     final entry = _previewEntry;
-    return AstryxDialog(
+
+    return FilePreviewDialog(
       controller: _previewDialog,
-      title: entry?.name ?? 'Preview',
-      width: 720,
-      footer: AstryxHStack(
-        gap: AstryxSpacingToken.spacing2,
-        justify: AstryxStackJustify.end,
-        mainAxisSize: MainAxisSize.max,
-        children: <Widget>[
-          if (entry != null && _ops.contains(FileOp.share))
-            AstryxButton(
-              label: 'Copy share link',
-              size: AstryxButtonSize.sm,
-              leading: const Icon(DextrIcons.link),
-              onPressed: () => _share(entry),
-            ),
-          if (entry != null && _ops.contains(FileOp.download))
-            AstryxButton(
-              label: 'Download',
-              variant: AstryxButtonVariant.primary,
-              size: AstryxButtonSize.sm,
-              leading: const Icon(DextrIcons.download),
-              onPressed: () => _download(<FileEntry>[entry]),
-            ),
-        ],
-      ),
-      child: entry == null
-          ? const SizedBox.shrink()
-          : AstryxVStack(
-              gap: AstryxSpacingToken.spacing4,
-              align: AstryxStackAlign.stretch,
-              children: <Widget>[
-                AstryxMetadataList(
-                  direction: AstryxMetadataListDirection.inline,
-                  items: <AstryxMetadataItem>[
-                    AstryxMetadataItem.text(label: 'Path', value: entry.path),
-                    if (entry.size != null)
-                      AstryxMetadataItem.text(
-                        label: 'Size',
-                        value: _humanSize(entry.size!),
-                      ),
-                    if (entry.contentType != null)
-                      AstryxMetadataItem.text(
-                        label: 'Type',
-                        value: entry.contentType!,
-                      ),
-                    if (entry.etag != null)
-                      AstryxMetadataItem.text(
-                        label: 'ETag',
-                        value: entry.etag!,
-                      ),
-                    if (entry.modified != null)
-                      AstryxMetadataItem(
-                        label: 'Modified',
-                        value: AstryxTimestamp(entry.modified!),
-                        semanticsValue: entry.modified!.toLocal().toString(),
-                      ),
-                  ],
-                ),
-                const AstryxDivider(),
-                _previewBody(entry),
-              ],
-            ),
+      entry: entry,
+      // The reader is this pane's, because the connection is: the dialog knows
+      // what to do with bytes and nothing about where they come from.
+      read: (maxBytes) async {
+        final source = await _src();
+        if (source == null) throw StateError('Source is not file-browsable');
+        return source.readBytes(_inBucket, entry!.path, maxBytes: maxBytes);
+      },
+      onCopyLink: entry != null && _ops.contains(FileOp.share)
+          ? () => _share(entry)
+          : null,
+      onDownload: entry != null && _ops.contains(FileOp.download)
+          ? () => _download(<FileEntry>[entry])
+          : null,
     );
   }
-
-  Widget _previewBody(FileEntry entry) {
-    if (_previewLoading) {
-      return const AstryxCenter(
-        padding: AstryxSpacingToken.spacing6,
-        child: AstryxSpinner(label: 'Reading the file'),
-      );
-    }
-    if (_previewError case final error?) {
-      return AstryxBanner(
-        status: AstryxBannerStatus.error,
-        title: 'Could not read this file',
-        description: '$error',
-      );
-    }
-    final data = _previewData;
-    if (data == null) {
-      return const AstryxBanner(
-        title: 'No inline preview',
-        description:
-            'Download the file to open it in something that '
-            'understands the format.',
-        announce: false,
-      );
-    }
-
-    if (_isImage(entry.name)) {
-      return AstryxVStack(
-        gap: AstryxSpacingToken.spacing2,
-        align: AstryxStackAlign.stretch,
-        children: <Widget>[
-          if (data.truncated) const _TruncatedNote(),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 360),
-            child: Image.memory(
-              Uint8List.fromList(data.bytes),
-              fit: BoxFit.contain,
-              semanticLabel: entry.name,
-              errorBuilder: (context, error, stack) => const AstryxBanner(
-                status: AstryxBannerStatus.warning,
-                title: 'This image could not be decoded',
-                description:
-                    'The bytes arrived, but not in a format Flutter reads.',
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    var text = utf8.decode(data.bytes, allowMalformed: true);
-    if (entry.name.toLowerCase().endsWith('.json')) {
-      try {
-        text = const JsonEncoder.withIndent('  ').convert(jsonDecode(text));
-      } catch (_) {
-        // Not valid JSON after all — show it as it came.
-      }
-    }
-    return AstryxVStack(
-      gap: AstryxSpacingToken.spacing2,
-      align: AstryxStackAlign.stretch,
-      children: <Widget>[
-        if (data.truncated) const _TruncatedNote(),
-        AstryxCodeBlock(
-          text,
-          language: p.extension(entry.name).replaceFirst('.', ''),
-          maxHeight: 360,
-        ),
-      ],
-    );
-  }
-}
-
-class _TruncatedNote extends StatelessWidget {
-  const _TruncatedNote();
-
-  @override
-  Widget build(BuildContext context) => const AstryxBanner(
-    status: AstryxBannerStatus.warning,
-    title: 'Preview truncated',
-    description:
-        'The file is larger than the preview limit, so this is '
-        'only the beginning of it.',
-    announce: false,
-  );
-}
-
-const _imageExtensions = <String>{'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'};
-
-const _textExtensions = <String>{
-  'txt',
-  'json',
-  'csv',
-  'tsv',
-  'md',
-  'log',
-  'yaml',
-  'yml',
-  'xml',
-  'html',
-  'htm',
-  'dart',
-  'js',
-  'ts',
-  'jsx',
-  'tsx',
-  'py',
-  'java',
-  'c',
-  'cpp',
-  'h',
-  'hpp',
-  'go',
-  'rs',
-  'rb',
-  'sh',
-  'sql',
-  'ini',
-  'toml',
-  'conf',
-  'env',
-  'css',
-};
-
-bool _isImage(String name) => _imageExtensions.contains(_extensionOf(name));
-
-bool _isText(String name) => _textExtensions.contains(_extensionOf(name));
-
-String _extensionOf(String name) =>
-    p.extension(name).toLowerCase().replaceFirst('.', '');
-
-String _humanSize(int bytes) {
-  const units = <String>['B', 'KB', 'MB', 'GB', 'TB'];
-  var size = bytes.toDouble();
-  var unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit++;
-  }
-  return '${size.toStringAsFixed(unit == 0 ? 0 : 1)} ${units[unit]}';
 }

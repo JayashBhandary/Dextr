@@ -26,12 +26,17 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
 
   static const _uuid = Uuid();
 
-  String openBrowseTab(String connectionId, ContainerRef container) {
+  /// Opens (or re-activates) a browse tab.
+  ///
+  /// A null [container] is the level *above* one: the buckets of an object
+  /// store, listed in the pane rather than only in the rail. That is what makes
+  /// them reachable with the rail collapsed.
+  String openBrowseTab(String connectionId, ContainerRef? container) {
     final existing = state.tabs.cast<WorkspaceTab?>().firstWhere(
       (t) =>
           t?.connectionId == connectionId &&
           t?.view == WorkspaceView.browse &&
-          t?.container?.name == container.name,
+          t?.container?.name == container?.name,
       orElse: () => null,
     );
     if (existing != null) {
@@ -114,6 +119,26 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
     final updated = state.tabs.map((t) {
       if (t.id != tabId) return t;
       t.view = view;
+      return t;
+    }).toList();
+    state = state.copyWith(tabs: updated);
+  }
+
+  /// Points a tab at another object without opening a second one.
+  ///
+  /// What the file browser calls when the user walks into a bucket from the
+  /// pane: the tab keeps its identity — and so its editor text and its place in
+  /// the strip — while its title, the rail's highlight and the suggestions the
+  /// query editor offers all follow where the user actually is.
+  void setTabContainer(String tabId, ContainerRef? container) {
+    final tab = state.tabs.cast<WorkspaceTab?>().firstWhere(
+      (t) => t?.id == tabId,
+      orElse: () => null,
+    );
+    if (tab == null || tab.container?.name == container?.name) return;
+    final updated = state.tabs.map((t) {
+      if (t.id != tabId) return t;
+      t.container = container;
       return t;
     }).toList();
     state = state.copyWith(tabs: updated);
