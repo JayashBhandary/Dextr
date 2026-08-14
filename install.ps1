@@ -31,11 +31,17 @@ $release = Invoke-RestMethod `
 # Only assets served from this project's own release path are candidates: the
 # release lists every attached asset, and a name match alone would accept one
 # uploaded by somebody else.
+#
+# Compared case-insensitively: the API returns URLs with the repository's
+# canonical casing (".../JayashBhandary/Dextr/..."), which need not match the
+# spelling in $Repo. GitHub owner and repository names are unique without
+# regard to case, so this still cannot resolve to anybody else's repository.
 $releasePrefix = "https://github.com/$Repo/releases/download/"
+$ordinalNoCase = [System.StringComparison]::OrdinalIgnoreCase
 
 $asset = $release.assets |
     Where-Object {
-        $_.browser_download_url.StartsWith($releasePrefix) -and
+        $_.browser_download_url.StartsWith($releasePrefix, $ordinalNoCase) -and
         $_.name -match '^dextr-.*windows-x64\.zip$'
     } |
     Select-Object -First 1
@@ -47,7 +53,7 @@ if (-not $asset) {
 
 $sums = $release.assets |
     Where-Object {
-        $_.browser_download_url.StartsWith($releasePrefix) -and $_.name -eq 'SHA256SUMS'
+        $_.browser_download_url.StartsWith($releasePrefix, $ordinalNoCase) -and $_.name -eq 'SHA256SUMS'
     } |
     Select-Object -First 1
 

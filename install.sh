@@ -69,11 +69,15 @@ fi
 # suffix anywhere in a URL would accept one uploaded by somebody else.
 RELEASE_PREFIX="https://github.com/$REPO/releases/download/"
 
+# Compared case-insensitively: the API returns URLs with the repository's
+# canonical casing (".../JayashBhandary/Dextr/..."), which need not match the
+# spelling in $REPO. GitHub owner and repository names are unique without
+# regard to case, so this still cannot resolve to anybody else's repository.
 asset_urls() {
   printf '%s' "$RELEASE_JSON" \
     | grep -oE '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+"' \
     | sed -E 's/.*"([^"]+)"$/\1/' \
-    | grep -F "$RELEASE_PREFIX"
+    | grep -iF "$RELEASE_PREFIX"
 }
 
 # Anchored to the end of the name, so `evil-macos-arm64.dmg` does not match a
