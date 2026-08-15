@@ -80,6 +80,13 @@ class _NoConnection extends ConsumerWidget {
 
     return AstryxCenter(
       child: AstryxEmptyState(
+        // The component's default 380 is a ceiling on the whole block, and its
+        // standard size spends 40 of that on padding either side — leaving 300
+        // for text, which the title does not fit. It is set in display type at
+        // 29px, so "No connection open" wrapped across two lines. 480 leaves
+        // 400 for the title to stay on one, and still holds the description to
+        // a readable measure.
+        maxWidth: 480,
         icon: const Icon(DextrIcons.newConnection),
         title: hasAny ? 'No connection open' : 'No connections yet',
         description: hasAny

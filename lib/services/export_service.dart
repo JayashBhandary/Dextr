@@ -61,12 +61,12 @@ class ExportService {
     required Uint8List bytes,
     String? dialogTitle,
   }) async {
-    final extension = p.extension(fileName).replaceFirst('.', '');
+    final extension = _filterExtension(fileName);
     final path = await _saveFile(
       fileName: fileName,
       bytes: bytes,
       dialogTitle: dialogTitle ?? 'Export $fileName',
-      allowedExtensions: extension.isEmpty ? null : <String>[extension],
+      allowedExtensions: extension == null ? null : <String>[extension],
     );
     if (path == null) return null;
     return ExportOutcome(path: path, bytes: bytes.length);
@@ -103,6 +103,20 @@ class ExportService {
     return '${safe.isEmpty ? 'export' : safe}-$stamp.$extension';
   }
 
+  /// The extension to narrow the save dialog to, or null for no filter.
+  ///
+  /// A file name can carry a container or connection name that came from the
+  /// server, so the extension is only used as a filter when it is a bare
+  /// alphanumeric token. Anything else — a separator, a quote, a space, a
+  /// wildcard — is dropped rather than passed down to the platform dialog,
+  /// which takes the filter as a list of raw strings. The file still saves; it
+  /// just saves without the type filter.
+  static String? _filterExtension(String fileName) {
+    final extension = p.extension(fileName).replaceFirst('.', '');
+    if (!RegExp(r'^[A-Za-z0-9]{1,16}$').hasMatch(extension)) return null;
+    return extension.toLowerCase();
+  }
+
   /// Reduces a container or connection name to something every filesystem
   /// accepts. A qualified name like `public.users` keeps its dot — that is not
   /// an extension and it is the most useful part of the name.
@@ -117,15 +131,22 @@ class ExportService {
     required Uint8List bytes,
     String? dialogTitle,
     List<String>? allowedExtensions,
-  }) => FilePicker.saveFile(
-    fileName: fileName,
-    bytes: bytes,
-    dialogTitle: dialogTitle,
-    allowedExtensions: allowedExtensions,
-    // The dialog stays in front of the window on Windows; without it the save
-    // sheet can end up behind the app and the app looks frozen.
-    lockParentWindow: true,
-  );
+  }) {
+    // file_picker only accepts an extension filter alongside FileType.custom,
+    // and only accepts FileType.custom with a non-empty filter — asking for
+    // either half on its own throws before the dialog ever opens.
+    final filtered = allowedExtensions?.isNotEmpty ?? false;
+    return FilePicker.saveFile(
+      fileName: fileName,
+      bytes: bytes,
+      dialogTitle: dialogTitle,
+      type: filtered ? FileType.custom : FileType.any,
+      allowedExtensions: filtered ? allowedExtensions : null,
+      // The dialog stays in front of the window on Windows; without it the save
+      // sheet can end up behind the app and the app looks frozen.
+      lockParentWindow: true,
+    );
+  }
 
   static Future<String?> _defaultPickDirectory({String? dialogTitle}) =>
       FilePicker.getDirectoryPath(

@@ -11,7 +11,9 @@ import 'package:dextr/services/secrets_store.dart';
 import 'package:dextr/services/settings_repo.dart';
 import 'package:dextr/state/providers.dart';
 import 'package:dextr/state/workspace_provider.dart';
+import 'package:astryx_ui/astryx_ui.dart';
 import 'package:dextr/ui/widgets/data_grid.dart';
+import 'package:dextr/ui/widgets/sql_editor.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -218,6 +220,39 @@ void main() {
 
     expect(find.text('second'), findsWidgets);
     expect(find.text('first'), findsNothing);
+  });
+
+  testWidgets('the handle between the query and the result moves the split', (
+    tester,
+  ) async {
+    await openQueryView(tester);
+
+    final handle = find.byType(AstryxResizeHandle);
+    expect(handle, findsOneWidget);
+
+    double editorHeight() => tester.getSize(find.byType(SqlEditor)).height;
+    // Where the seam sits, which is the other half's ceiling.
+    double seam() => tester.getTopLeft(handle).dy;
+
+    final before = editorHeight();
+    final seamBefore = seam();
+
+    // Down grows the query half, which is the half the handle sits under.
+    // No touch slop: the drag is measured against the pointer, and the default
+    // slop would eat the first 20 of the 120 before the handle saw any of it.
+    await tester.drag(handle, const Offset(0, 120), touchSlopY: 0);
+    await tester.pump();
+
+    expect(editorHeight(), closeTo(before + 120, 1));
+    // The seam moved with it rather than the card growing: what the query half
+    // took, the result half gave up.
+    expect(seam(), closeTo(seamBefore + 120, 1));
+
+    // Back up again, past the floor, to check the query half cannot be dragged
+    // out of existence.
+    await tester.drag(handle, const Offset(0, -4000), touchSlopY: 0);
+    await tester.pump();
+    expect(editorHeight(), greaterThan(0));
   });
 }
 

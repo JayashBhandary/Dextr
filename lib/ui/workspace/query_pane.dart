@@ -63,6 +63,13 @@ class _QueryPaneState extends ConsumerState<QueryPane> {
   final AstryxDialogController _export = AstryxDialogController();
   Timer? _persist;
 
+  /// How tall the query half is, once it has been dragged.
+  ///
+  /// Null until then, which is not the same as a number: the default is a
+  /// share of whatever height the pane was given, and a stored pixel height
+  /// would have to be guessed before the first layout to write one here.
+  double? _queryHeight;
+
   @override
   void initState() {
     super.initState();
@@ -90,9 +97,7 @@ class _QueryPaneState extends ConsumerState<QueryPane> {
   void _warmContainer() {
     final container = widget.container;
     if (container == null) return;
-    ref
-        .read(sqlCatalogueProvider.notifier)
-        .warm(<String>[container.qualified]);
+    ref.read(sqlCatalogueProvider.notifier).warm(<String>[container.qualified]);
   }
 
   /// Leaving the editor is the end of the typing, whatever the timer thinks.
@@ -211,15 +216,17 @@ class _QueryPaneState extends ConsumerState<QueryPane> {
     }
     final source = ref.read(activeDataSourceProvider).value;
     try {
-      final outcome = await ref.read(exportServiceProvider).saveText(
-        fileName: ExportService.suggestFileName(
-          source?.displayName ?? 'query',
-          'sql',
-          at: DateTime.now(),
-        ),
-        text: sql.endsWith(';') ? '$sql\n' : '$sql;\n',
-        dialogTitle: 'Export the query',
-      );
+      final outcome = await ref
+          .read(exportServiceProvider)
+          .saveText(
+            fileName: ExportService.suggestFileName(
+              source?.displayName ?? 'query',
+              'sql',
+              at: DateTime.now(),
+            ),
+            text: sql.endsWith(';') ? '$sql\n' : '$sql;\n',
+            dialogTitle: 'Export the query',
+          );
       _toast(
         outcome == null ? 'Export cancelled' : 'Query saved to ${outcome.path}',
       );
@@ -235,6 +242,71 @@ class _QueryPaneState extends ConsumerState<QueryPane> {
         message: message,
         type: error ? AstryxToastType.error : AstryxToastType.neutral,
       ),
+    );
+  }
+
+  /// The query above, the result below, and a handle between them.
+  ///
+  /// The two used to be `Expanded` at two parts and three, which is a fine
+  /// starting ratio and a poor permanent one: a long query and a short result
+  /// want the opposite of a short query and a long one.
+  ///
+  /// [available] is the height the two halves share, so the pixel the handle
+  /// reports is the pixel the query half is drawn at — a handle sized against
+  /// the whole card would drift away from the pointer as it was dragged.
+  Widget _buildSplit({required double available, required Widget editor}) {
+    // What is left for the halves once the handle has taken its band.
+    final space = available - _handleThickness;
+    // Floors, not suggestions: a query half of nothing is a pane with no
+    // editor in it, and the handle that would drag it back is the thing that
+    // just disappeared.
+    const minQuery = 96.0;
+    const minResult = 140.0;
+
+    final roomForBoth = space >= minQuery + minResult;
+    final maxQuery = roomForBoth ? space - minResult : minQuery;
+    // Two parts in five: where the fixed split used to put it.
+    final height = roomForBoth
+        ? (_queryHeight ?? space * 0.4).clamp(minQuery, maxQuery)
+        // Too short to honour either floor — sharing what there is beats
+        // overflowing by the difference.
+        : (space * 0.4).clamp(0.0, space < 0 ? 0.0 : space);
+
+    return AstryxVStack(
+      align: AstryxStackAlign.stretch,
+      mainAxisSize: MainAxisSize.max,
+      children: <Widget>[
+        SizedBox(
+          height: height,
+          child: AstryxVStack(
+            gap: AstryxSpacingToken.spacing3,
+            align: AstryxStackAlign.stretch,
+            mainAxisSize: MainAxisSize.max,
+            children: <Widget>[
+              Expanded(child: editor),
+              _EditorStatus(controller: _controller),
+            ],
+          ),
+        ),
+        // In place of the divider that used to sit here: it draws the same
+        // hairline until it is used, and it is reachable from the keyboard,
+        // which a divider with a drag bolted onto it would not be.
+        AstryxResizeHandle(
+          label: 'Resize the query editor',
+          edge: AstryxResizeEdge.top,
+          size: height,
+          min: minQuery,
+          max: maxQuery,
+          thickness: _handleThickness,
+          enabled: roomForBoth,
+          onResize: (value) => setState(() => _queryHeight = value),
+        ),
+        // Const, and reading the providers it needs itself: a widget that is
+        // identical between two builds of this pane is not rebuilt at all,
+        // which is what keeps a results table of any size out of the typing
+        // path.
+        const Expanded(child: _QueryResults()),
+      ],
     );
   }
 
@@ -317,29 +389,28 @@ class _QueryPaneState extends ConsumerState<QueryPane> {
           // nothing to divide.
           mainAxisSize: MainAxisSize.max,
           children: <Widget>[
-            // The query takes two parts in five and the result three, because a
-            // result nobody can see is the reason to have run it.
+            // A second measurement, of the split itself rather than the card:
+            // the handle deals in pixels, so the arithmetic below has to be
+            // against the height the two halves actually have to share, not
+            // the card's, which also holds the header and this dialog.
             Expanded(
-              flex: 2,
-              child: SqlEditor(
-                controller: _controller,
-                focusNode: _focus,
-                enabled: source != null,
-                onRun: canRun ? _run : null,
-                onChanged: _onChanged,
-                catalogue: catalogue,
-                contextTable: widget.container?.qualified,
-                onCatalogueRequest: (tables) =>
-                    ref.read(sqlCatalogueProvider.notifier).warm(tables),
+              child: LayoutBuilder(
+                builder: (context, split) => _buildSplit(
+                  available: split.maxHeight,
+                  editor: SqlEditor(
+                    controller: _controller,
+                    focusNode: _focus,
+                    enabled: source != null,
+                    onRun: canRun ? _run : null,
+                    onChanged: _onChanged,
+                    catalogue: catalogue,
+                    contextTable: widget.container?.qualified,
+                    onCatalogueRequest: (tables) =>
+                        ref.read(sqlCatalogueProvider.notifier).warm(tables),
+                  ),
+                ),
               ),
             ),
-            _EditorStatus(controller: _controller),
-            const AstryxDivider(),
-            // Const, and reading the providers it needs itself: a widget that
-            // is identical between two builds of this pane is not rebuilt at
-            // all, which is what keeps a results table of any size out of the
-            // typing path.
-            const _QueryResults(),
             ExportDialog(
               controller: _export,
               title: 'Export the results',
@@ -350,7 +421,8 @@ class _QueryPaneState extends ConsumerState<QueryPane> {
               sources: <ExportSource>[
                 ExportSource(
                   label: 'The result set',
-                  description: 'Everything the run returned, already in memory.',
+                  description:
+                      'Everything the run returned, already in memory.',
                   load: _exportResult,
                 ),
               ],
@@ -361,6 +433,12 @@ class _QueryPaneState extends ConsumerState<QueryPane> {
     );
   }
 }
+
+/// How much room the drag target between the halves takes.
+///
+/// Wider than the divider it replaced: the rule it paints is a hairline, but a
+/// hairline is not a thing a pointer can catch.
+const double _handleThickness = 16;
 
 /// Where the caret is, what would run, and how to run it.
 class _EditorStatus extends StatefulWidget {
@@ -400,10 +478,7 @@ class _EditorStatusState extends State<_EditorStatus> {
     final line = '\n'.allMatches(before).length + 1;
     final column = caret - (before.lastIndexOf('\n') + 1) + 1;
 
-    final statements = text
-        .split(';')
-        .where((s) => s.trim().isNotEmpty)
-        .length;
+    final statements = text.split(';').where((s) => s.trim().isNotEmpty).length;
     final selected = selection.isValid && !selection.isCollapsed;
 
     return AstryxHStack(
@@ -449,49 +524,49 @@ class _QueryResults extends ConsumerWidget {
     );
     final result = execution.result;
 
-    return Expanded(
-      flex: 3,
-      child: AstryxVStack(
-        gap: AstryxSpacingToken.spacing3,
-        align: AstryxStackAlign.stretch,
-        mainAxisSize: MainAxisSize.max,
-        children: <Widget>[
-          _ResultSummary(execution: execution),
-          if (execution.error case final error?)
-            AstryxBanner(
-              status: AstryxBannerStatus.error,
-              title: 'The query failed',
-              description: '$error',
-              onDismiss: ref.read(queryRunnerProvider.notifier).clear,
-            ),
-          Expanded(
-            child: result == null
-                ? const AstryxCenter(
-                    child: AstryxEmptyState(
-                      title: 'No results yet',
-                      description: 'Run the query to see what comes back.',
-                      size: AstryxEmptyStateSize.compact,
-                    ),
-                  )
-                : DextrDataGrid(
-                    label: 'Query results',
-                    columns: result.columns,
-                    rows: result.rows,
-                    density: density,
-                    emptyState: AstryxEmptyState(
-                      title: result.affectedRows != null
-                          ? '${result.affectedRows} rows affected'
-                          : 'No rows',
-                      description: result.affectedRows != null
-                          ? 'The statement changed the data but returned '
-                                'nothing.'
-                          : 'The query ran and matched nothing.',
-                      size: AstryxEmptyStateSize.compact,
-                    ),
-                  ),
+    // Flexed by the caller rather than here: how much of the pane this half
+    // takes is now the handle's business, and a widget that decides its own
+    // share cannot be dragged to another one.
+    return AstryxVStack(
+      gap: AstryxSpacingToken.spacing3,
+      align: AstryxStackAlign.stretch,
+      mainAxisSize: MainAxisSize.max,
+      children: <Widget>[
+        _ResultSummary(execution: execution),
+        if (execution.error case final error?)
+          AstryxBanner(
+            status: AstryxBannerStatus.error,
+            title: 'The query failed',
+            description: '$error',
+            onDismiss: ref.read(queryRunnerProvider.notifier).clear,
           ),
-        ],
-      ),
+        Expanded(
+          child: result == null
+              ? const AstryxCenter(
+                  child: AstryxEmptyState(
+                    title: 'No results yet',
+                    description: 'Run the query to see what comes back.',
+                    size: AstryxEmptyStateSize.compact,
+                  ),
+                )
+              : DextrDataGrid(
+                  label: 'Query results',
+                  columns: result.columns,
+                  rows: result.rows,
+                  density: density,
+                  emptyState: AstryxEmptyState(
+                    title: result.affectedRows != null
+                        ? '${result.affectedRows} rows affected'
+                        : 'No rows',
+                    description: result.affectedRows != null
+                        ? 'The statement changed the data but returned '
+                              'nothing.'
+                        : 'The query ran and matched nothing.',
+                    size: AstryxEmptyStateSize.compact,
+                  ),
+                ),
+        ),
+      ],
     );
   }
 }
