@@ -48,6 +48,7 @@ jobs:
           set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
           SRC="build/macos/Build/Products/Release/Dextr.app"
+          ENTITLEMENTS="$PWD/macos/Runner/Release.entitlements"
 
           thin_app() {
             local app="$1"
@@ -57,8 +58,28 @@ jobs:
                 lipo "$f" -thin "$arch" -output "$f.tmp" && mv "$f.tmp" "$f"
               fi
             done
-            # Re-sign ad-hoc since lipo invalidated signatures
-            codesign --force --deep --sign - "$app"
+            # Re-sign ad-hoc since lipo invalidated signatures. Inside-out rather
+            # than --deep, and the entitlements are named explicitly: a re-sign
+            # without --entitlements drops every entitlement Xcode applied, and
+            # an app with no com.apple.security.files.user-selected.read-write
+            # cannot open a save dialog — file_picker checks the signature at
+            # runtime and refuses with ENTITLEMENT_REQUIRED_WRITE. --deep would
+            # push the app's sandbox entitlements onto the frameworks too.
+            find "$app/Contents/Frameworks" -mindepth 1 -maxdepth 1 -print0 \
+              | while IFS= read -r -d '' framework; do
+                  codesign --force --sign - "$framework"
+                done
+            codesign --force --sign - --entitlements "$ENTITLEMENTS" "$app"
+          }
+
+          # The entitlements are what let the app open a file dialog at all, so
+          # a build that lost them must fail here rather than ship.
+          verify_entitlements() {
+            local app="$1"
+            codesign --verify --strict "$app"
+            codesign -d --entitlements :- "$app" 2>/dev/null \
+              | grep -q 'com.apple.security.files.user-selected.read-write' \
+              || { echo "::error::$app is missing the read-write entitlement" >&2; exit 1; }
           }
 
           package_dmg() {
@@ -77,6 +98,8 @@ jobs:
               echo "==> Verifying thinned main binary"
               lipo -info "$app_copy/Contents/MacOS/Dextr"
             fi
+
+            verify_entitlements "$app_copy"
 
             hdiutil create \
               -volname "Dextr" \
