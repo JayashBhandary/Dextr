@@ -5,6 +5,7 @@ import 'package:dextr/app.dart';
 import 'package:dextr/connectors/data_source.dart';
 import 'package:dextr/connectors/vector/vector_types.dart';
 import 'package:dextr/core/capabilities.dart';
+import 'package:dextr/core/errors.dart';
 import 'package:dextr/core/cell_value.dart';
 import 'package:dextr/core/page.dart' as core;
 import 'package:dextr/core/query_spec.dart';
@@ -309,6 +310,33 @@ void main() {
     expect(find.textContaining('That is not a vector'), findsOneWidget);
   });
 
+  testWidgets('an engine refusing a read says what it said, not how it failed', (
+    tester,
+  ) async {
+    // The regression: describing the space and reading it run concurrently,
+    // and collecting them with a record's `.wait` wrapped any failure in a
+    // `ParallelWaitError` — so an engine's own explanation came out as
+    // "ParallelWaitError: DextrError: …", one wrapper more than anyone needs
+    // and with the useful half buried.
+    await openSpace(
+      tester,
+      withApp: appWith(
+        _FakeSpace(
+          record,
+          failWith: const QueryError(
+            'Chroma: HTTP 422 — Collection is still being indexed',
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.textContaining('Collection is still being indexed'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('ParallelWaitError'), findsNothing);
+  });
+
   testWidgets('an empty collection says so rather than drawing nothing', (
     tester,
   ) async {
@@ -326,7 +354,12 @@ void main() {
 /// A vector space of [count] points lying on a plane inside a 64-dimensional
 /// space, so the projection has something definite to find.
 class _FakeSpace extends DataSource with VectorSearchable {
-  _FakeSpace(this.record, {this.count = 120, this.textSearchable = true});
+  _FakeSpace(
+    this.record, {
+    this.count = 120,
+    this.textSearchable = true,
+    this.failWith,
+  });
 
   final ConnectionRecord record;
   final int count;
@@ -334,6 +367,10 @@ class _FakeSpace extends DataSource with VectorSearchable {
   /// Whether this engine can search its own text, or leaves the pane to
   /// filter what it has already read.
   final bool textSearchable;
+
+  /// When set, every read fails with this, standing in for an engine that
+  /// refuses the request.
+  final Object? failWith;
 
   static const _dimension = 64;
 
@@ -398,19 +435,26 @@ class _FakeSpace extends DataSource with VectorSearchable {
   Future<RowData?> getRow(ContainerRef container, RowId id) async => null;
 
   @override
-  Future<VectorSpaceInfo> describeVectors(ContainerRef container) async =>
-      VectorSpaceInfo(
+  Future<VectorSpaceInfo> describeVectors(ContainerRef container) async {
+    final failure = failWith;
+    if (failure != null) throw failure;
+    return VectorSpaceInfo(
         name: container.name,
-        dimension: _dimension,
-        count: count,
-        metric: VectorMetric.cosine,
-      );
+      dimension: _dimension,
+      count: count,
+      metric: VectorMetric.cosine,
+    );
+  }
 
   @override
   Future<List<VectorPoint>> sampleVectors(
     ContainerRef container, {
     int limit = 1000,
-  }) async => _points.take(limit).toList();
+  }) async {
+    final failure = failWith;
+    if (failure != null) throw failure;
+    return _points.take(limit).toList();
+  }
 
   /// A literal search over the fake's own payloads, standing in for an engine
   /// that can search its whole collection.

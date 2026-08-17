@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import '../../../core/errors.dart';
+import '../../../core/logger.dart';
 import '../../data_source.dart';
 import '../vector_backend.dart';
 import '../vector_types.dart';
@@ -156,6 +159,19 @@ class ChromaBackend with VectorHttp implements VectorBackend {
     );
   }
 
+  /// The biggest page this server has been willing to serve.
+  ///
+  /// Chroma Cloud refuses a request it considers too large with a 422 whose
+  /// only explanation is in the body, and the ceiling is not published or
+  /// discoverable up front — it varies by plan. So rather than guess a number
+  /// and be wrong in one direction or the other, this starts at something a
+  /// hosted tier is comfortable with and halves on refusal until a page goes
+  /// through, then stays there for the rest of the connection.
+  int _pageLimit = _initialPageLimit;
+
+  static const int _initialPageLimit = 100;
+  static const int _minPageLimit = 10;
+
   @override
   Future<VectorPage> scroll(
     String collection, {
@@ -164,22 +180,37 @@ class ChromaBackend with VectorHttp implements VectorBackend {
   }) async {
     final id = await _idOf(collection);
     final offset = int.tryParse(cursor ?? '') ?? 0;
-    final body = await send(
-      'POST',
-      '$_root/collections/$id/get',
-      body: <String, Object?>{
-        'limit': limit,
-        'offset': offset,
-        'include': const <String>['embeddings', 'metadatas', 'documents'],
-      },
-    );
-    final points = _columnsToPoints(body);
-    return VectorPage(
-      points: points,
-      // Chroma pages by integer offset and says nothing about whether more
-      // remain, so a short page is the only end-of-list signal there is.
-      cursor: points.length < limit ? null : '${offset + points.length}',
-    );
+
+    while (true) {
+      final asked = math.min(limit, _pageLimit);
+      try {
+        final body = await send(
+          'POST',
+          '$_root/collections/$id/get',
+          body: <String, Object?>{
+            'limit': asked,
+            'offset': offset,
+            'include': const <String>['embeddings', 'metadatas', 'documents'],
+          },
+        );
+        final points = _columnsToPoints(body);
+        return VectorPage(
+          points: points,
+          // Chroma pages by integer offset and says nothing about whether more
+          // remain, so a short page is the only end-of-list signal there is.
+          // Measured against what was *asked for*, not what the caller wanted:
+          // a page trimmed to the server's ceiling is a full page.
+          cursor: points.length < asked ? null : '${offset + points.length}',
+        );
+      } on VectorHttpError catch (e) {
+        if (!e.mightSucceedSmaller || asked <= _minPageLimit) rethrow;
+        _pageLimit = math.max(_minPageLimit, asked ~/ 2);
+        log.i(
+          'Chroma refused a page of $asked (HTTP ${e.statusCode}); '
+          'retrying with $_pageLimit',
+        );
+      }
+    }
   }
 
   @override

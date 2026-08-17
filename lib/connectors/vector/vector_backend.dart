@@ -61,6 +61,31 @@ abstract class VectorBackend {
   });
 }
 
+/// A refusal from an engine, with the status it came back on.
+///
+/// The code is carried rather than only spelled into the message because some
+/// of them are worth *acting* on: a hosted engine rejecting a page as too large
+/// is a thing a client can retry smaller, and matching on a substring of a
+/// human-readable sentence to find that out would be a poor way to know.
+class VectorHttpError extends QueryError {
+  const VectorHttpError(
+    super.message, {
+    required this.statusCode,
+    super.cause,
+    super.stack,
+  });
+
+  final int statusCode;
+
+  /// Whether asking for less might succeed where this failed.
+  ///
+  /// 422 is what Chroma Cloud answers when a request is well-formed but
+  /// refused; 413 is the plain "payload too large"; 429 is a rate limit that a
+  /// smaller page also eases.
+  bool get mightSucceedSmaller =>
+      statusCode == 422 || statusCode == 413 || statusCode == 429;
+}
+
 /// The HTTP plumbing three of the four backends share.
 ///
 /// Every hosted vector engine is a JSON API behind a base URL with one auth
@@ -154,7 +179,10 @@ mixin VectorHttp {
     final code = res.statusCode ?? 0;
     if (code == 404 && allow404) return null;
     if (code < 200 || code >= 300) {
-      throw QueryError('$engineLabel: ${_statusMessage(code, res.data)}');
+      throw VectorHttpError(
+        '$engineLabel: ${_statusMessage(code, res.data)}',
+        statusCode: code,
+      );
     }
     return res.data;
   }
@@ -185,26 +213,51 @@ mixin VectorHttp {
     return detail == null ? prefix : '$prefix — $detail';
   }
 
+  /// Pulls the human half out of an error body.
+  ///
+  /// The **message is preferred over the error name**, and that ordering is the
+  /// whole point. Chroma answers with `{"error": "ChromaError", "message":
+  /// "…the actual reason…"}`, where the name is the category its own code falls
+  /// back to for half a dozen conditions. Reading the name first turned every
+  /// one of those into the bare word "ChromaError" and threw away the only part
+  /// that said what had gone wrong.
   String? _extractDetail(Object? data) {
     if (data is String) return data.isEmpty ? null : _clip(data);
     if (data is! Map) return null;
-    final status = data['status'];
-    if (status is Map && status['error'] != null) {
-      return _clip('${status['error']}');
-    }
-    for (final key in const ['error', 'detail', 'message', 'msg']) {
+
+    String? message;
+    for (final key in const ['message', 'detail', 'msg', 'description']) {
       final v = data[key];
-      if (v is String && v.isNotEmpty) return _clip(v);
-      if (v is Map && v['message'] is String) return _clip('${v['message']}');
-    }
-    final errors = data['error'];
-    if (errors is List && errors.isNotEmpty) {
-      final first = errors.first;
-      if (first is Map && first['message'] != null) {
-        return _clip('${first['message']}');
+      if (v is String && v.isNotEmpty) {
+        message = v;
+        break;
       }
     }
-    return null;
+
+    // The error's *name*, worth keeping alongside the message but never
+    // instead of it.
+    String? kind;
+    final error = data['error'];
+    if (error is String && error.isNotEmpty) {
+      kind = error;
+    } else if (error is Map) {
+      if (error['message'] is String) message ??= error['message'] as String;
+      if (error['type'] is String) kind ??= error['type'] as String;
+    } else if (error is List && error.isNotEmpty) {
+      final first = error.first;
+      if (first is Map && first['message'] != null) {
+        message ??= '${first['message']}';
+      }
+    }
+
+    final status = data['status'];
+    if (status is Map && status['error'] != null) {
+      message ??= '${status['error']}';
+    }
+
+    if (message == null) return kind == null ? null : _clip(kind);
+    if (kind == null || kind == message) return _clip(message);
+    return _clip('$message ($kind)');
   }
 
   /// A server that answers a bad path with an HTML page should not paste the

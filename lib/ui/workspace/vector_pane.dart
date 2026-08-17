@@ -267,17 +267,29 @@ class _VectorPaneState extends ConsumerState<VectorPane> {
   Widget build(BuildContext context) {
     final space = ref.watch(vectorSpaceProvider(_key));
 
-    return switch (space) {
-      AsyncLoading() => _VectorLoading(sample: _sample),
-      AsyncError(:final error) => AstryxCenter(
+    // Read by what the state *holds*, not by which subclass it is.
+    //
+    // A provider that failed and is now being retried is an `AsyncLoading`
+    // carrying the previous error, so matching `AsyncLoading()` first showed a
+    // spinner over the top of a real failure — for ever, if the retry failed
+    // the same way. What matters is whether there is a value to draw and
+    // whether there is an error to report, and neither question is answered by
+    // the class of the wrapper.
+    final value = space.value;
+    if (value != null) return _body(value);
+
+    final error = space.error;
+    if (error != null) {
+      return AstryxCenter(
         child: AstryxBanner(
           status: AstryxBannerStatus.error,
           title: 'Could not read this vector space',
           description: '$error',
         ),
-      ),
-      AsyncData(:final value) => _body(value),
-    };
+      );
+    }
+
+    return _VectorLoading(sample: _sample);
   }
 
   Widget _body(VectorSpace space) {

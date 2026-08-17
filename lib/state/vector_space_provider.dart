@@ -63,10 +63,18 @@ final vectorSpaceProvider = FutureProvider.autoDispose
       // Concurrently, because they are independent questions asked of the same
       // connection: describing the space does not depend on having read it, and
       // running them in turn made every open pay two round trips end to end.
-      final (info, points) = await (
+      //
+      // `Future.wait` rather than a record's `.wait`: the record form collects
+      // failures into a `ParallelWaitError`, whose `toString` names neither the
+      // call that failed nor what it said. An engine refusing a request came
+      // out as "ParallelWaitError: DextrError: …", which is one wrapper more
+      // than anyone needs. This form rethrows the first real error untouched.
+      final results = await Future.wait<Object?>(<Future<Object?>>[
         source.describeVectors(container),
         source.sampleVectors(container, limit: key.sample),
-      ).wait;
+      ]);
+      final info = results[0]! as VectorSpaceInfo;
+      final points = results[1]! as List<VectorPoint>;
       final read = sw.elapsedMilliseconds;
 
       if (points.isEmpty) {

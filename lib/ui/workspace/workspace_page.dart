@@ -144,10 +144,21 @@ class _StatusBar extends ConsumerWidget {
     final source = ref.watch(activeDataSourceProvider);
     final workspace = ref.watch(workspaceProvider);
 
+    // An error outranks a retry in progress: a connection that is failing
+    // should not read as "Connecting…" every time it tries again.
     final (variant, label) = switch (source) {
-      AsyncLoading() => (AstryxStatusDotVariant.accent, 'Connecting…'),
-      AsyncError() => (AstryxStatusDotVariant.error, 'Not connected'),
-      AsyncData(value: null) => (AstryxStatusDotVariant.neutral, 'Idle'),
+      AsyncValue<DataSource?>(hasValue: false, error: != null) => (
+        AstryxStatusDotVariant.error,
+        'Not connected',
+      ),
+      AsyncValue<DataSource?>(hasValue: false) => (
+        AstryxStatusDotVariant.accent,
+        'Connecting…',
+      ),
+      AsyncValue<DataSource?>(value: null) => (
+        AstryxStatusDotVariant.neutral,
+        'Idle',
+      ),
       _ => (AstryxStatusDotVariant.success, 'Connected'),
     };
     final kind = source.value?.kind.label;
@@ -192,16 +203,20 @@ class _NoTab extends ConsumerWidget {
     // empty state is the only way in.
     final browsable = source.value is FileBrowsable;
 
-    return switch (source) {
-      AsyncLoading() => const AstryxCenter(
-        child: AstryxSpinner(label: 'Opening the connection'),
-      ),
-      AsyncError(:final error) => AstryxCenter(
+    final failure = source.hasValue ? null : source.error;
+    if (failure != null) {
+      return AstryxCenter(
         child: AstryxBanner(
           status: AstryxBannerStatus.error,
           title: 'Could not open this connection',
-          description: '$error',
+          description: '$failure',
         ),
+      );
+    }
+
+    return switch (source) {
+      AsyncValue<DataSource?>(hasValue: false) => const AstryxCenter(
+        child: AstryxSpinner(label: 'Opening the connection'),
       ),
       _ => AstryxCenter(
         child: AstryxEmptyState(
@@ -255,19 +270,26 @@ class _PaneFor extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final source = ref.watch(activeDataSourceProvider);
 
-    return switch (source) {
-      AsyncLoading() => const AstryxCenter(
-        child: AstryxSpinner(label: 'Opening the connection'),
-      ),
-      AsyncError(:final error) => AstryxCenter(
+    // Read by what the state holds rather than by which subclass it is: a
+    // connection that failed and is being retried is an `AsyncLoading` carrying
+    // the previous error, and matching the class first hid that failure behind
+    // a spinner that never went away.
+    if (source.hasValue) return _viewFor(source.value, tab);
+
+    final error = source.error;
+    if (error != null) {
+      return AstryxCenter(
         child: AstryxBanner(
           status: AstryxBannerStatus.error,
           title: 'Could not open this connection',
           description: '$error',
         ),
-      ),
-      AsyncData(:final value) => _viewFor(value, tab),
-    };
+      );
+    }
+
+    return const AstryxCenter(
+      child: AstryxSpinner(label: 'Opening the connection'),
+    );
   }
 
   Widget _viewFor(DataSource? source, WorkspaceTab tab) {
