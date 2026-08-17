@@ -4,6 +4,7 @@ import '../core/capabilities.dart';
 import '../core/cell_value.dart';
 import '../core/page.dart';
 import '../core/query_spec.dart';
+import 'vector/vector_types.dart';
 
 /// A pointer to a container (table / collection / bucket / saved-op).
 class ContainerRef {
@@ -116,6 +117,69 @@ mixin Transactional on DataSource {
   Future<void> beginTx();
   Future<void> commit();
   Future<void> rollback();
+}
+
+/// A source whose containers are spaces of vectors rather than rows.
+///
+/// Three questions, which is all a vector space is asked: how wide is it and
+/// how much is in it, give me a representative handful of it, and what is near
+/// this. Everything the vector pane draws comes from these.
+///
+/// Kept here beside the other capability mixins so the UI gates on it the same
+/// way it gates on everything else — `source is VectorSearchable` — rather than
+/// on the connection's kind. A future engine that is not a vector database but
+/// can still answer these gets the pane for free.
+mixin VectorSearchable on DataSource {
+  /// Width, size and distance function of one collection.
+  Future<VectorSpaceInfo> describeVectors(ContainerRef container);
+
+  /// Up to [limit] points, in whatever order the engine walks them.
+  ///
+  /// Not a random sample: no engine offers one cheaply, and the first N points
+  /// of a collection are representative enough to project. Implementations cap
+  /// [limit] at their own ceiling rather than trusting the caller.
+  Future<List<VectorPoint>> sampleVectors(
+    ContainerRef container, {
+    int limit = 1000,
+  });
+
+  /// The [topK] points nearest [query], scored by the space's own metric.
+  Future<List<VectorPoint>> nearestVectors(
+    ContainerRef container,
+    List<double> query, {
+    int topK = 20,
+  });
+
+  /// Points whose text matches [query], across the whole collection.
+  ///
+  /// Null when the engine has no text search of its own — see
+  /// [TextMatches.searchedWholeCollection] for why the caller has to know the
+  /// difference between that and finding nothing.
+  Future<List<VectorPoint>?> searchVectorText(
+    ContainerRef container,
+    String query, {
+    int limit = 50,
+  });
+}
+
+/// The result of looking for a point by its text, and how far the look went.
+class TextMatches {
+  const TextMatches({
+    required this.points,
+    required this.searchedWholeCollection,
+  });
+
+  final List<VectorPoint> points;
+
+  /// Whether the engine searched everything, or only the sample already read.
+  ///
+  /// The distinction matters more than it looks: "no matches in the 1,000
+  /// points on screen" and "no matches in this collection" are different
+  /// answers, and showing the first as though it were the second sends someone
+  /// away believing their document is not there.
+  final bool searchedWholeCollection;
+
+  bool get isEmpty => points.isEmpty;
 }
 
 mixin EndpointInvocable on DataSource {

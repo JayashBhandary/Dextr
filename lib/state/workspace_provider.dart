@@ -63,6 +63,33 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
     return tab.id;
   }
 
+  /// Opens (or re-activates) the vector-space view of one collection.
+  ///
+  /// Deduplicated the way [openBrowseTab] is: a vector space is expensive to
+  /// open — a few thousand vectors read and projected — and two tabs on the
+  /// same collection would pay for it twice to show the same picture.
+  String openVectorTab(String connectionId, ContainerRef container) {
+    final existing = state.tabs.cast<WorkspaceTab?>().firstWhere(
+      (t) =>
+          t?.connectionId == connectionId &&
+          t?.view == WorkspaceView.vectors &&
+          t?.container?.name == container.name,
+      orElse: () => null,
+    );
+    if (existing != null) {
+      state = state.copyWith(activeTabId: existing.id);
+      return existing.id;
+    }
+    final tab = WorkspaceTab(
+      id: _uuid.v4(),
+      connectionId: connectionId,
+      view: WorkspaceView.vectors,
+      container: container,
+    );
+    state = state.copyWith(tabs: [...state.tabs, tab], activeTabId: tab.id);
+    return tab.id;
+  }
+
   String openSchemaTab(String connectionId, ContainerRef container) {
     final tab = WorkspaceTab(
       id: _uuid.v4(),

@@ -83,5 +83,6 @@ class KindPicker extends StatelessWidget {
     DataSourceKind.s3 => 'Buckets and objects',
     DataSourceKind.rest => 'Saved HTTP calls',
     DataSourceKind.graphql => 'Saved queries against one endpoint',
+    DataSourceKind.vector => 'Embeddings, plotted as a space',
   };
 }

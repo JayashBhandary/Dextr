@@ -241,6 +241,15 @@ class ConnectionsRail extends ConsumerWidget {
             .cast<ContainerRef?>()
             .firstWhere((c) => c?.name == name, orElse: () => null);
     if (container == null) return;
+
+    // A vector collection opens on its space rather than on a grid of
+    // truncated float arrays: the plot is what the connection is for, and the
+    // Browse segment is one click away for the rows.
+    final source = ref.read(activeDataSourceProvider).value;
+    if (source is VectorSearchable) {
+      ref.read(workspaceProvider.notifier).openVectorTab(connectionId, container);
+      return;
+    }
     ref.read(workspaceProvider.notifier).openBrowseTab(connectionId, container);
   }
 }

@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../connectors/mysql/mysql_ssl.dart';
 import '../../connectors/registry.dart';
+import '../../connectors/vector/vector_types.dart';
 import '../../core/capabilities.dart';
 import '../../domain/connection_record.dart';
 import '../../domain/connection_secrets.dart';
@@ -20,6 +21,7 @@ import 'forms/postgres_form.dart';
 import 'forms/rest_form.dart';
 import 'forms/s3_form.dart';
 import 'forms/sqlite_form.dart';
+import 'forms/vector_form.dart';
 import 'kind_picker.dart';
 
 class ConnectionFormPage extends ConsumerStatefulWidget {
@@ -158,6 +160,22 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     'useSSL': r.useSSL,
   };
 
+  /// One config shape for four engines: `provider` says which one, `mode` says
+  /// how it is reached, and the rest is whichever of those two needed it.
+  Map<String, Object?> _vectorConfig(VectorFormResult r) => {
+    'provider': r.provider.name,
+    'mode': r.mode.name,
+    if (r.mode != VectorMode.file) 'url': r.url,
+    if (r.tenant != null && r.tenant!.isNotEmpty) 'tenant': r.tenant,
+    if (r.database != null && r.database!.isNotEmpty) 'database': r.database,
+    if (r.namespace != null && r.namespace!.isNotEmpty)
+      'namespace': r.namespace,
+    if (r.mode == VectorMode.file) ...{
+      FileAccess.pathKey: r.directoryPath ?? '',
+      FileAccess.bookmarkKey: ?r.bookmark,
+    },
+  };
+
   Future<void> _testSqlite(SqliteFormResult r) =>
       _testRecord(_testStub(DataSourceKind.sqlite, _sqliteConfig(r)), null);
 
@@ -188,6 +206,11 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
       secretAccessKey: r.secretAccessKey,
       sessionToken: r.sessionToken,
     ),
+  );
+
+  Future<void> _testVector(VectorFormResult r) => _testRecord(
+    _testStub(DataSourceKind.vector, _vectorConfig(r)),
+    ConnectionSecrets(apiKey: r.apiKey),
   );
 
   // --- Save -----------------------------------------------------------------
@@ -360,6 +383,22 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     await _afterSave();
   }
 
+  Future<void> _saveVector(VectorFormResult r) async {
+    final secretsRef = _secretsRefId;
+    final record = ConnectionRecord(
+      id: _recordId,
+      name: r.name,
+      kind: DataSourceKind.vector,
+      config: _vectorConfig(r),
+      secretsRef: secretsRef,
+    );
+    await ref
+        .read(secretsStoreProvider)
+        .write(secretsRef, ConnectionSecrets(apiKey: r.apiKey));
+    await ref.read(connectionsProvider.notifier).upsert(record);
+    await _afterSave();
+  }
+
   // --- Prefill builders (edit mode) ----------------------------------------
 
   SqliteFormResult get _initSqlite => SqliteFormResult(
@@ -443,6 +482,19 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     apiKey: _secrets?.apiKey,
     basicAuth: _secrets?.basicAuth,
     operationsJson: _cfgStr('operations'),
+  );
+
+  VectorFormResult get _initVector => VectorFormResult(
+    name: widget.editing!.name,
+    provider: VectorProvider.fromName(widget.editing!.config['provider']),
+    mode: VectorMode.fromName(widget.editing!.config['mode']),
+    url: _cfgStr('url'),
+    apiKey: _secrets?.apiKey,
+    tenant: _cfgStr('tenant'),
+    database: _cfgStr('database'),
+    namespace: _cfgStr('namespace'),
+    directoryPath: _cfgStr(FileAccess.pathKey),
+    bookmark: widget.editing!.config[FileAccess.bookmarkKey] as String?,
   );
 
   void _cancel() => context.go('/');
@@ -561,6 +613,12 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
       onSubmit: _saveGraphql,
       onCancel: _cancel,
       initial: _isEdit ? _initGraphql : null,
+    ),
+    DataSourceKind.vector => VectorForm(
+      onSubmit: _saveVector,
+      onTest: _testVector,
+      onCancel: _cancel,
+      initial: _isEdit ? _initVector : null,
     ),
   };
 }

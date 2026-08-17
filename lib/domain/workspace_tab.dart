@@ -1,6 +1,6 @@
 import '../connectors/data_source.dart';
 
-enum WorkspaceView { browse, query, schema }
+enum WorkspaceView { browse, query, schema, vectors }
 
 class WorkspaceTab {
   WorkspaceTab({
@@ -25,6 +25,10 @@ class WorkspaceTab {
         return 'Query';
       case WorkspaceView.schema:
         return container?.name == null ? 'Schema' : '${container!.name} · schema';
+      case WorkspaceView.vectors:
+        return container?.name == null
+            ? 'Vectors'
+            : '${container!.name} · vectors';
     }
   }
 }

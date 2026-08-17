@@ -70,6 +70,7 @@ abstract final class DextrIcons {
     DataSourceKind.s3 => LucideIcons.cloud,
     DataSourceKind.rest => LucideIcons.plug,
     DataSourceKind.graphql => LucideIcons.braces,
+    DataSourceKind.vector => LucideIcons.chartScatter,
   };
 
   /// The icon standing for one container inside a connection.
@@ -162,8 +163,11 @@ abstract final class DextrIcons {
   static const preview = LucideIcons.eye;
   static const refresh = LucideIcons.refreshCw;
   static const run = LucideIcons.play;
+  static const search = LucideIcons.search;
   static const settings = LucideIcons.settings;
+  static const target = LucideIcons.crosshair;
   static const terminal = LucideIcons.terminal;
+  static const vectors = LucideIcons.chartScatter;
   static const unplug = LucideIcons.unplug;
   static const up = LucideIcons.arrowUp;
   static const upload = LucideIcons.upload;

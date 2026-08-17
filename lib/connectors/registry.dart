@@ -10,6 +10,7 @@ import 'postgres/postgres_data_source.dart';
 import 'rest/rest_data_source.dart';
 import 's3/s3_data_source.dart';
 import 'sqlite/sqlite_data_source.dart';
+import 'vector/vector_data_source.dart';
 
 typedef DataSourceFactory = DataSource Function(
     ConnectionRecord record, ConnectionSecrets? secrets);
@@ -29,6 +30,9 @@ class ConnectorRegistry {
     DataSourceKind.rest: (r, s) => RestDataSource(record: r, secrets: s),
     DataSourceKind.graphql: (r, s) =>
         GraphqlDataSource(record: r, secrets: s),
+    // One factory for four engines: which of them a record means is `provider`
+    // in its config, and the data source picks the backend at connect.
+    DataSourceKind.vector: (r, s) => VectorDataSource(record: r, secrets: s),
   };
 
   /// Kinds supported on the current platform (web caveats applied at UI level).

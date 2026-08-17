@@ -48,10 +48,62 @@ keychain, not in your shell history.
 | S3 / MinIO | ✓ | — | hierarchical file browser, presigned URLs |
 | REST API | ✓ | endpoint | saved operations |
 | GraphQL API | ✓ | endpoint | saved operations |
+| Vector DB | ✓ | vector search | Qdrant, Chroma, Pinecone, Weaviate |
 
 Each connector advertises its capabilities — raw query, write, schema
-read/mutate, transactions, object storage, file browse, endpoint invoke — and the
-UI adapts to what the backend actually supports.
+read/mutate, transactions, object storage, file browse, endpoint invoke, vector
+search — and the UI adapts to what the backend actually supports.
+
+### Vector databases
+
+One connection kind covers four engines; which one it is is a field on the
+connection rather than a kind of its own.
+
+| Engine | Local | Cloud | File | Reached by |
+|--------|:---:|:---:|:---:|-----------|
+| Qdrant | ✓ | ✓ | — | REST, `api-key` header |
+| Chroma | ✓ | ✓ | ✓ | REST (v2, falling back to v1) |
+| Pinecone | — | ✓ | — | control plane → per-index host |
+| Weaviate | ✓ | ✓ | — | REST to list, GraphQL to search |
+
+**File mode** opens a store on disk with no server running, and only Chroma has
+a format that can be read that way: its persist directory is a `chroma.sqlite3`
+catalogue beside an hnswlib index, both of which Dextr parses directly. Qdrant
+stores its segments in RocksDB and Weaviate in an LSM tree — neither is readable
+without the engine itself — and Pinecone is hosted only, so the mode is disabled
+for those three rather than offered and failing.
+
+Read-only by design: a vector connection browses and searches, and never writes.
+
+**Vectors pane** — the collection projected onto its leading principal
+components and drawn as a scatter you can turn: three axes by default, with a
+2D plane a click away. Drag to rotate, shift-drag to move, scroll to zoom;
+colour by a payload field, click a mark to read its payload. Depth is carried by
+size and occlusion as well as by a wireframe box, so the rotation reads as a
+rotation. The percentage of the spread the projection kept is shown beside the
+plot, because a plot that kept 12% of it is not evidence of much.
+
+**Probe and neighbours** — the working question the pane is built around is
+"where does this document sit, and what is near it". Search the collection's
+text, pick a match, and it becomes the *probe*: its nearest vectors light up
+around it with a thread drawn to each, and everything else steps back.
+
+| Engine | Text search |
+|--------|-------------|
+| Chroma (file) | FTS5 over the documents — substring, trigram-indexed |
+| Chroma (server) | `where_document` `$contains` |
+| Weaviate | BM25 across every text property |
+| Qdrant | none — needs a named field with a full-text index |
+| Pinecone | none — metadata filters are exact-match only |
+
+Where an engine cannot search itself the pane filters the points it has already
+read and says so: "nothing in the 1,000 plotted points" and "nothing in this
+collection" are different answers, and only one of them means the document is
+not there.
+
+Query text is never embedded — the model behind a collection is unknown, and a
+query embedded by the wrong one returns confident nonsense. Text search is
+literal, and vector search takes a vector or an existing point.
 
 ## Workspace
 
@@ -60,6 +112,9 @@ UI adapts to what the backend actually supports.
 - **Browse pane** — paginated `pluto_grid` with inline insert / update / delete.
 - **Query pane** — SQL editor with syntax highlighting for query-capable sources.
 - **Schema pane** — columns, types, primary keys.
+- **Vectors pane** — a rotatable 3D PCA scatter of a vector collection, with
+  full-text search to pick a probe and see its nearest vectors around it;
+  keyboard-reachable, not mouse-only.
 - **File browser** — upload / download / preview for object stores.
 - **Tabbed** — multiple workspaces open at once.
 

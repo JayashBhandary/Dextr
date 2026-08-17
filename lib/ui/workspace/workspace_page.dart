@@ -13,6 +13,7 @@ import 'browse_pane.dart';
 import 'file_browser_pane.dart';
 import 'query_pane.dart';
 import 'schema_pane.dart';
+import 'vector_pane.dart';
 
 /// The page inside the shell: the strip of open objects, the view switcher, the
 /// view itself, and a status line about the connection underneath it.
@@ -70,6 +71,9 @@ class _ViewBar extends ConsumerWidget {
     final canBrowse = hasContainer || source is FileBrowsable;
     final canQuery = source is RawQueryable;
     final canReadSchema = source is SchemaReadable && hasContainer;
+    // A vector space is a view *of a collection*, so it needs one picked —
+    // there is nothing to project at the level above.
+    final canSeeVectors = source is VectorSearchable && hasContainer;
 
     return AstryxHStack(
       gap: AstryxSpacingToken.spacing3,
@@ -98,6 +102,11 @@ class _ViewBar extends ConsumerWidget {
               value: WorkspaceView.schema,
               label: 'Schema',
               enabled: canReadSchema,
+            ),
+            AstryxSegment(
+              value: WorkspaceView.vectors,
+              label: 'Vectors',
+              enabled: canSeeVectors,
             ),
           ],
         ),
@@ -300,6 +309,16 @@ class _PaneFor extends ConsumerWidget {
         final container = tab.container;
         if (container == null) return const _MissingContainer();
         return SchemaPane(container: container);
+      case WorkspaceView.vectors:
+        final container = tab.container;
+        if (container == null) return const _MissingContainer();
+        // Keyed by the collection, not by the tab: the projection is of one
+        // space, and pointing the tab at another collection has to throw away
+        // the zoom, the selection and the neighbour list along with the plot.
+        return VectorPane(
+          key: ValueKey('vectors-${tab.id}-${container.name}'),
+          container: container,
+        );
     }
   }
 }

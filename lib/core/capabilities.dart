@@ -7,6 +7,7 @@ enum Capability {
   fileBrowse,
   endpointInvoke,
   transactions,
+  vectorSearch,
 }
 
 enum DataSourceKind {
@@ -17,7 +18,13 @@ enum DataSourceKind {
   mongo,
   s3,
   rest,
-  graphql;
+  graphql,
+
+  /// One entry for four engines — Qdrant, Chroma, Pinecone, Weaviate — because
+  /// what distinguishes them is a field on the connection, not a different kind
+  /// of thing to connect to. Which one a record means lives in its config under
+  /// `provider`; see `VectorProvider`.
+  vector;
 
   String get label => switch (this) {
         sqlite => 'SQLite',
@@ -28,5 +35,6 @@ enum DataSourceKind {
         s3 => 'S3 / MinIO',
         rest => 'REST API',
         graphql => 'GraphQL API',
+        vector => 'Vector DB',
       };
 }
