@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'domain/connection_record.dart';
 import 'ui/connection_form/connection_form_page.dart';
+import 'ui/docs/docs_page.dart';
 import 'ui/settings/settings_page.dart';
 import 'ui/shell/app_shell.dart';
 import 'ui/shell/window_frame.dart';
@@ -29,6 +30,12 @@ GoRouter buildRouter({String initialLocation = '/'}) {
         path: '/connection/edit',
         builder: (context, state) => WindowCaptionInset(
           child: ConnectionFormPage(editing: state.extra as ConnectionRecord?),
+        ),
+      ),
+      GoRoute(
+        path: '/docs',
+        builder: (context, state) => WindowCaptionInset(
+          child: DocsPage(initialChapterId: state.extra as String?),
         ),
       ),
       GoRoute(

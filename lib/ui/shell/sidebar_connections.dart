@@ -247,7 +247,9 @@ class ConnectionsRail extends ConsumerWidget {
     // Browse segment is one click away for the rows.
     final source = ref.read(activeDataSourceProvider).value;
     if (source is VectorSearchable) {
-      ref.read(workspaceProvider.notifier).openVectorTab(connectionId, container);
+      ref
+          .read(workspaceProvider.notifier)
+          .openVectorTab(connectionId, container);
       return;
     }
     ref.read(workspaceProvider.notifier).openBrowseTab(connectionId, container);
@@ -270,11 +272,17 @@ class _SettingsButton extends StatelessWidget {
   );
 }
 
-/// Pinned below the rows: the one action an empty rail needs.
+/// Pinned below the rows: the two actions an empty rail needs.
 ///
-/// Collapsed it is the same two actions as icons — a button with a label in a
-/// 64-pixel column is a button with its label clipped, and dropping the action
-/// instead would mean a collapsed rail could not add a connection at all.
+/// Adding a connection, and the manual — which is the other thing somebody with
+/// an empty rail is looking for. Labelled rather than an icon in the heading,
+/// because a reader who does not know what this application is will not go
+/// hunting behind a glyph for the page that explains it.
+///
+/// Collapsed they are icons, along with Settings — a button with a label in a
+/// 64-pixel column is a button with its label clipped, and dropping the actions
+/// instead would mean a collapsed rail could neither add a connection nor reach
+/// the docs.
 class _RailFooter extends StatelessWidget {
   const _RailFooter({required this.collapsed});
 
@@ -286,19 +294,52 @@ class _RailFooter extends StatelessWidget {
       return const AstryxVStack(
         gap: AstryxSpacingToken.spacing1,
         align: AstryxStackAlign.center,
-        children: <Widget>[_NewConnectionButton(), _SettingsButton()],
+        children: <Widget>[
+          _NewConnectionButton(),
+          _DocsButton(),
+          _SettingsButton(),
+        ],
       );
     }
 
-    return AstryxButton(
-      label: 'New connection',
-      variant: AstryxButtonVariant.secondary,
-      size: AstryxButtonSize.sm,
-      width: double.infinity,
-      leading: const Icon(DextrIcons.newConnection),
-      onPressed: () => context.go('/connection/new'),
+    return AstryxVStack(
+      gap: AstryxSpacingToken.spacing1,
+      align: AstryxStackAlign.stretch,
+      children: <Widget>[
+        AstryxButton(
+          label: 'New connection',
+          variant: AstryxButtonVariant.secondary,
+          size: AstryxButtonSize.sm,
+          width: double.infinity,
+          leading: const Icon(DextrIcons.newConnection),
+          onPressed: () => context.go('/connection/new'),
+        ),
+        AstryxButton(
+          label: 'Docs',
+          variant: AstryxButtonVariant.ghost,
+          size: AstryxButtonSize.sm,
+          width: double.infinity,
+          leading: const Icon(DextrIcons.docs),
+          onPressed: () => context.go('/docs'),
+        ),
+      ],
     );
   }
+}
+
+/// The way to the manual, for the collapsed rail.
+class _DocsButton extends StatelessWidget {
+  const _DocsButton();
+
+  @override
+  Widget build(BuildContext context) => AstryxIconButton.custom(
+    label: 'Docs',
+    tooltip: 'Docs',
+    variant: AstryxButtonVariant.ghost,
+    size: AstryxButtonSize.sm,
+    onPressed: () => context.go('/docs'),
+    child: const Icon(DextrIcons.docs),
+  );
 }
 
 /// The footer's action with its label hidden, for the collapsed rail.

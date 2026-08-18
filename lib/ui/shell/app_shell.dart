@@ -37,9 +37,8 @@ class AppShell extends ConsumerWidget {
             workspace.closeAllTabs,
         // The same key every editor collapses its file tree with, for the same
         // reason: the rail is not what is being read while a query is written.
-        const AstryxHotkey.mod(LogicalKeyboardKey.keyB): () => ref
-            .read(railCollapsedProvider.notifier)
-            .update((value) => !value),
+        const AstryxHotkey.mod(LogicalKeyboardKey.keyB): () =>
+            ref.read(railCollapsedProvider.notifier).update((value) => !value),
       },
       // The width is decided out here because the collapsed rail is only the
       // column beside the content: a drawer is opened on purpose and has room
@@ -83,23 +82,35 @@ class _NoConnection extends ConsumerWidget {
         // The component's default 380 is a ceiling on the whole block, and its
         // standard size spends 40 of that on padding either side — leaving 300
         // for text, which the title does not fit. It is set in display type at
-        // 29px, so "No connection open" wrapped across two lines. 480 leaves
-        // 400 for the title to stay on one, and still holds the description to
-        // a readable measure.
-        maxWidth: 480,
+        // 29px, so "No connection open" wrapped across two lines.
+        //
+        // 580 rather than the 480 that fits the title, because the actions row
+        // does not wrap: the two buttons a first launch offers need about 480
+        // between them, and a narrower ceiling overflows the row rather than
+        // stacking it.
+        maxWidth: 580,
         icon: const Icon(DextrIcons.newConnection),
         title: hasAny ? 'No connection open' : 'No connections yet',
         description: hasAny
             ? 'Pick one from the rail to browse its tables, collections or buckets.'
             : 'Add a database, an object store or an HTTP endpoint to get started.',
         actions: <Widget>[
-          if (!hasAny)
+          if (!hasAny) ...<Widget>[
             AstryxButton(
               label: 'New connection',
               variant: AstryxButtonVariant.primary,
               leading: const Icon(DextrIcons.newConnection),
               onPressed: () => context.go('/connection/new'),
-            )
+            ),
+            // The other thing somebody looking at an empty rail is after: the
+            // page that says what any of this is. Offered here as well as in
+            // the rail, because this is where a first launch lands.
+            AstryxButton(
+              label: 'Read the docs',
+              leading: const Icon(DextrIcons.docs),
+              onPressed: () => context.go('/docs'),
+            ),
+          ]
           // In the drawer layout the rail is not on screen, so the way to it
           // has to be.
           else if (shell.compact)

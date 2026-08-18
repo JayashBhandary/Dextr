@@ -101,13 +101,12 @@ abstract final class DextrIcons {
       FileKind.archive => LucideIcons.fileArchive,
       // Text splits again by what the text is, because "a file of words" and "a
       // file of code" are different things to someone scanning a bucket.
-      FileKind.text => _codeExtensions.contains(
-        FileKind.extensionOf(entry.name),
-      )
-          ? LucideIcons.fileCode
-          : _dataExtensions.contains(FileKind.extensionOf(entry.name))
-          ? LucideIcons.fileJson
-          : LucideIcons.fileText,
+      FileKind.text =>
+        _codeExtensions.contains(FileKind.extensionOf(entry.name))
+            ? LucideIcons.fileCode
+            : _dataExtensions.contains(FileKind.extensionOf(entry.name))
+            ? LucideIcons.fileJson
+            : LucideIcons.fileText,
       FileKind.binary => LucideIcons.file,
     };
   }
@@ -151,6 +150,7 @@ abstract final class DextrIcons {
   static const column = LucideIcons.columns3;
   static const copy = LucideIcons.copy;
   static const delete = LucideIcons.trash2;
+  static const docs = LucideIcons.bookOpen;
   static const download = LucideIcons.download;
   static const edit = LucideIcons.pencil;
   static const export = LucideIcons.fileOutput;

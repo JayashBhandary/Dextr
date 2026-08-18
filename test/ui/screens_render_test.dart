@@ -11,6 +11,9 @@ import 'package:dextr/services/secrets_store.dart';
 import 'package:dextr/services/settings_repo.dart';
 import 'package:dextr/state/providers.dart';
 import 'package:dextr/state/rail_provider.dart';
+import 'package:astryx_ui/astryx_ui.dart';
+import 'package:dextr/ui/docs/docs_chapters.dart';
+import 'package:dextr/ui/docs/docs_page.dart';
 import 'package:dextr/ui/shell/sidebar_connections.dart';
 import 'package:dextr/ui/shell/window_frame.dart';
 import 'package:dextr/ui/widgets/connection_actions.dart';
@@ -260,6 +263,89 @@ void main() {
         reason: 'the ${kind.label} form did not render',
       );
     }
+  });
+
+  testWidgets('the docs page renders every chapter', (tester) async {
+    sizeWindow(tester);
+    await tester.pumpWidget(app(location: '/docs'));
+    await settle(tester);
+
+    // A table, a key cap and a code block all drew: those are the blocks a
+    // prose page fails on, and a section heading alone would also be found in
+    // the outline beside it.
+    await tester.tap(find.text('SQLite, PostgreSQL, MySQL').first);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('verifyFull'), findsWidgets);
+    expect(
+      find.text('postgresql://reader:secret@db.example.com:5432/analytics'),
+      findsOneWidget,
+    );
+
+    final keysChapter = find.text('Keyboard and pointer').first;
+    await tester.ensureVisible(keysChapter);
+    await tester.pump();
+    await tester.tap(keysChapter);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(AstryxKbd), findsWidgets);
+
+    await tester.tap(find.text(docsHome.title).first);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // The first chapter, its outline, and the rail that reaches the rest.
+    expect(find.text(docsHome.title), findsWidgets);
+    expect(find.bySemanticsLabel('On this page'), findsWidgets);
+
+    // Every chapter has to lay out: they carry the tables, the key caps and the
+    // code blocks, which is where a prose page overflows if it is going to.
+    for (final chapter in docsChapters) {
+      // The rail scrolls: a chapter far enough down it is off screen until the
+      // list is brought to it.
+      final row = find.text(chapter.title).first;
+      await tester.ensureVisible(row);
+      await tester.pump();
+      await tester.tap(row);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.text(chapter.summary),
+        findsOneWidget,
+        reason: 'the ${chapter.id} chapter did not render',
+      );
+      for (final section in chapter.sections) {
+        expect(
+          find.text(section.title),
+          findsWidgets,
+          reason: 'the ${chapter.id}/${section.id} section did not render',
+        );
+      }
+    }
+  });
+
+  testWidgets('a narrow window puts the chapter list behind a drawer', (
+    tester,
+  ) async {
+    sizeWindow(tester, width: 900);
+    await tester.pumpWidget(app(location: '/docs'));
+    await settle(tester);
+
+    // The rail is off screen, so the way to it has to be on the page.
+    final open = find.bySemanticsLabel('Show the chapter list');
+    expect(open, findsOneWidget);
+
+    await tester.tap(open);
+    await settle(tester);
+    expect(find.text(docsChapters.last.title), findsWidgets);
+  });
+
+  testWidgets('the rail reaches the docs', (tester) async {
+    sizeWindow(tester);
+    await tester.pumpWidget(app());
+    await settle(tester);
+
+    await tester.tap(find.text('Docs'));
+    await settle(tester);
+
+    expect(find.byType(DocsPage), findsOneWidget);
+    expect(find.text(docsHome.title), findsWidgets);
   });
 }
 
