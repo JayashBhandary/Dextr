@@ -4,8 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/export/export_format.dart';
+import '../../core/logger.dart';
+import '../../core/version.dart';
 import '../../domain/app_settings.dart';
+import '../../services/app_reset.dart';
+import '../../services/update_service.dart';
+import '../../state/app_reset_provider.dart';
+import '../../state/providers.dart';
 import '../../state/settings_provider.dart';
+import '../../state/update_provider.dart';
 import '../../theme/app_theme.dart';
 
 const _pageSizes = <int>[25, 50, 100, 200, 500];
@@ -160,9 +167,28 @@ class SettingsPage extends ConsumerWidget {
             showDivider: true,
             child: _ExportDefaults(settings: settings, notifier: notifier),
           ),
+          const AstryxSection(
+            title: 'Updates',
+            description:
+                'Which build this is, and whether a newer one has been '
+                'published.',
+            showDivider: true,
+            child: _Updates(),
+          ),
           AstryxSection(
             title: 'Reset',
+            description:
+                'Puts the settings above back to their defaults. Your '
+                'connections stay where they are.',
+            showDivider: true,
             child: _ResetButton(onReset: notifier.reset),
+          ),
+          const AstryxSection(
+            title: 'Reset application',
+            description:
+                'Removes everything Dextr has stored on this machine, so the '
+                'next launch is a first launch.',
+            child: _ResetApplication(),
           ),
         ],
       ),
@@ -273,7 +299,6 @@ class _Swatch extends StatelessWidget {
   }
 }
 
-/// Reset, behind a confirmation: it is one press that changes six settings.
 /// What every export dialog opens on.
 ///
 /// Not the whole of the export dialog's options — the ones that are a habit
@@ -351,6 +376,131 @@ class _ExportDefaultsState extends State<_ExportDefaults> {
   }
 }
 
+/// The version this build is, and what the release feed says about it.
+///
+/// The check is a button rather than something that happens on open: this is a
+/// database client, and a page that phones out to github.com the moment it is
+/// looked at is a page that does something the user did not ask for on a machine
+/// where that may be noticed.
+///
+/// Nothing here writes to the installed application. Replacing /opt/dextr or
+/// /Applications/Dextr.app needs the privileges the install scripts ask for, and
+/// a client that could quietly elevate itself to overwrite its own binary would
+/// be a worse thing to have than the update it saves. So "Update now" opens the
+/// release and hands over the one-line command that installs it.
+class _Updates extends ConsumerStatefulWidget {
+  const _Updates();
+
+  @override
+  ConsumerState<_Updates> createState() => _UpdatesState();
+}
+
+class _UpdatesState extends ConsumerState<_Updates> {
+  Future<void> _openRelease(UpdateCheck check) async {
+    final toasts = AstryxToastScope.of(context);
+    try {
+      await ref.read(externalOpenProvider).openUrl(check.releaseUrl);
+      toasts.show(
+        const AstryxToast(
+          message:
+              'Release page opened. Run the command below to install it.',
+        ),
+      );
+    } catch (e, st) {
+      log.e('Could not open the release page', error: e, stackTrace: st);
+      toasts.show(
+        AstryxToast(
+          message: 'Could not open a browser: $e',
+          type: AstryxToastType.error,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(updateProvider);
+
+    return AstryxVStack(
+      gap: AstryxSpacingToken.spacing4,
+      align: AstryxStackAlign.stretch,
+      children: <Widget>[
+        AstryxMetadataList(
+          direction: AstryxMetadataListDirection.inline,
+          items: <AstryxMetadataItem>[
+            AstryxMetadataItem.text(label: 'Version', value: appVersion),
+            AstryxMetadataItem.text(label: 'Releases', value: appRepository),
+          ],
+        ),
+        AstryxHStack(
+          children: <Widget>[
+            AstryxButton(
+              label: 'Check for updates',
+              variant: AstryxButtonVariant.secondary,
+              loading: state.isLoading,
+              onPressed: ref.read(updateProvider.notifier).check,
+            ),
+          ],
+        ),
+        // Three outcomes, and the one nobody has asked for yet draws nothing:
+        // a banner saying "not checked" is a banner saying nothing happened.
+        ...switch (state) {
+          AsyncError(:final error) => <Widget>[
+            AstryxBanner(
+              status: AstryxBannerStatus.error,
+              title: 'Could not check for updates',
+              description: '$error',
+            ),
+          ],
+          AsyncData(value: final UpdateCheck check) => _result(check),
+          _ => const <Widget>[],
+        },
+      ],
+    );
+  }
+
+  /// What a completed check has to say.
+  List<Widget> _result(UpdateCheck check) {
+    if (!check.isUpdateAvailable) {
+      return <Widget>[
+        AstryxBanner(
+          status: AstryxBannerStatus.success,
+          title: 'Dextr is up to date',
+          description:
+              '${check.latestVersion} is the newest published release.',
+        ),
+      ];
+    }
+
+    return <Widget>[
+      AstryxBanner(
+        status: AstryxBannerStatus.info,
+        title: '${check.latestVersion} is available',
+        description:
+            'This build is ${check.currentVersion}. Updating replaces the '
+            'installed application and asks for your password, so it is done '
+            'by the installer rather than from in here — your connections and '
+            'settings are left where they are.',
+        actions: <Widget>[
+          AstryxButton(
+            label: 'Update now',
+            size: AstryxButtonSize.sm,
+            onPressed: () => _openRelease(check),
+          ),
+        ],
+      ),
+      // The command, not a description of it: it is the same one-liner the
+      // README documents, and the block carries its own copy button.
+      AstryxCodeBlock(
+        UpdateService.installCommand(),
+        language: UpdateService.installShell(),
+        wrap: true,
+      ),
+    ];
+  }
+}
+
+/// Reset, behind a confirmation: it is one press that changes six settings.
 class _ResetButton extends StatefulWidget {
   const _ResetButton({required this.onReset});
 
@@ -390,6 +540,133 @@ class _ResetButtonState extends State<_ResetButton> {
             await widget.onReset();
             toasts.show(const AstryxToast(message: 'Settings reset'));
           },
+        ),
+      ],
+    );
+  }
+}
+
+/// The factory reset: every connection, every credential, every setting.
+///
+/// Kept in its own section, away from the settings reset above it, because the
+/// two are one word apart in the UI and worlds apart in consequence. The banner
+/// is permanent rather than something the dialog says for the first time — a
+/// user has to be able to see what this does *before* pressing anything.
+class _ResetApplication extends ConsumerStatefulWidget {
+  const _ResetApplication();
+
+  @override
+  ConsumerState<_ResetApplication> createState() => _ResetApplicationState();
+}
+
+class _ResetApplicationState extends ConsumerState<_ResetApplication> {
+  final AstryxDialogController _confirm = AstryxDialogController();
+
+  /// Whether a wipe is in flight. The keychain and two files are several
+  /// awaits, and a second press part-way through would run the whole thing
+  /// again over half-deleted state.
+  bool _running = false;
+
+  @override
+  void dispose() {
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _reset() async {
+    if (_running) return;
+    setState(() => _running = true);
+    // Resolved before the await: the scope is what shows the toast, and
+    // reaching for it through a context afterwards is the async-gap bug.
+    final toasts = AstryxToastScope.of(context);
+    try {
+      final report = await resetApplication(ref);
+      toasts.show(
+        AstryxToast(
+          message: _summarise(report),
+          type: report.isClean
+              ? AstryxToastType.neutral
+              : AstryxToastType.error,
+          // A failure stays until it is dismissed. What survived a reset is a
+          // credential still on the machine, and five seconds is not long
+          // enough to read that and decide what to do about it.
+          duration: report.isClean ? const Duration(seconds: 5) : Duration.zero,
+        ),
+      );
+    } catch (e, st) {
+      // Caught rather than left to the zone: the one press a user makes here is
+      // the one they most need an answer to, and an uncaught error would leave
+      // the button spinning with nothing said.
+      log.e('Application reset failed', error: e, stackTrace: st);
+      toasts.show(
+        AstryxToast(
+          message: 'Reset failed: $e',
+          type: AstryxToastType.error,
+          duration: Duration.zero,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  /// What the toast says: the counts, then anything that did not go.
+  String _summarise(AppResetReport report) {
+    final connections = report.connectionsRemoved;
+    final credentials = report.credentialsRemoved;
+    final done =
+        'Application reset. '
+        '$connections connection${connections == 1 ? '' : 's'} and '
+        '$credentials credential${credentials == 1 ? '' : 's'} removed.';
+    if (report.isClean) return done;
+    return '$done ${report.failures.join(' ')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AstryxVStack(
+      gap: AstryxSpacingToken.spacing4,
+      align: AstryxStackAlign.stretch,
+      children: <Widget>[
+        // announce: false — it is part of the page every time it is opened, and
+        // reading it out on arrival is noise rather than a warning.
+        const AstryxBanner(
+          status: AstryxBannerStatus.warning,
+          title: 'This cannot be undone',
+          description:
+              'Every connection, every password and key saved in the '
+              'keychain, and every setting on this page is deleted. Open tabs '
+              'close. Nothing is exported first, and there is no way to get '
+              'any of it back — the databases themselves are untouched, but '
+              'you will have to set each connection up again from scratch.',
+          announce: false,
+        ),
+        AstryxHStack(
+          children: <Widget>[
+            AstryxButton(
+              label: 'Reset application',
+              variant: AstryxButtonVariant.destructive,
+              loading: _running,
+              onPressed: _confirm.show,
+            ),
+          ],
+        ),
+        AstryxAlertDialog(
+          controller: _confirm,
+          title: 'Erase everything and start over?',
+          description:
+              'Every connection and every credential Dextr has saved is '
+              'deleted from this machine, along with your settings. This '
+              'cannot be undone.',
+          confirmLabel: 'Erase everything',
+          destructive: true,
+          onConfirm: _reset,
+          child: const AstryxText(
+            'Your databases and their contents are not touched — only what '
+            'Dextr stored about how to reach them.',
+            type: AstryxTextType.supporting,
+            color: AstryxTextColor.secondary,
+          ),
         ),
       ],
     );

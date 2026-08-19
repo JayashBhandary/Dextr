@@ -12,6 +12,7 @@ import '../../state/settings_provider.dart';
 import '../../state/workspace_provider.dart';
 import '../widgets/connection_actions.dart';
 import '../widgets/dextr_icons.dart';
+import '../widgets/dextr_logo.dart';
 import 'window_frame.dart';
 
 /// Row ids the rail reports back. A rail reports one string, so the two kinds
@@ -92,6 +93,7 @@ class ConnectionsRail extends ConsumerWidget {
       onCollapsedChanged: (value) =>
           ref.read(railCollapsedProvider.notifier).state = value,
       onSelected: (id) => _onSelected(context, ref, id),
+      header: _RailHeader(collapsed: collapsed),
       footer: _RailFooter(collapsed: collapsed),
       entries: <AstryxNavEntry>[
         // The heading is a section with nothing in it, and the connections are
@@ -256,6 +258,45 @@ class ConnectionsRail extends ConsumerWidget {
   }
 }
 
+/// The application's mark at the top of the rail.
+///
+/// The launcher icon rather than a wordmark drawn from tokens: it is the same
+/// image the dock, the taskbar and the window's own title carry, and the rail is
+/// where somebody looks to confirm which application they are in. It brings its
+/// own dark plate, so one asset reads on a light surface and a dark one without
+/// a variant for each.
+///
+/// Collapsed it is the mark alone, centred over the column the icons run down.
+class _RailHeader extends StatelessWidget {
+  const _RailHeader({required this.collapsed});
+
+  final bool collapsed;
+
+  /// How big the mark is drawn.
+  ///
+  /// Bounded by the collapsed rail rather than by the wide one: at 40 it clears
+  /// the inset on both sides of the narrow column.
+  static const double _markSize = 40;
+
+  @override
+  Widget build(BuildContext context) {
+    if (collapsed) {
+      // No name beside it here, so the mark carries one for a screen reader.
+      return const Center(
+        child: DextrLogo(size: _markSize, semanticsLabel: 'Dextr'),
+      );
+    }
+
+    return const AstryxHStack(
+      gap: AstryxSpacingToken.spacing2,
+      children: <Widget>[
+        DextrLogo(size: _markSize),
+        AstryxText('Dextr', weight: AstryxTextWeight.semibold, maxLines: 1),
+      ],
+    );
+  }
+}
+
 /// The way to the settings page, in the heading of the wide rail and in the
 /// footer of the collapsed one.
 class _SettingsButton extends StatelessWidget {
@@ -280,9 +321,9 @@ class _SettingsButton extends StatelessWidget {
 /// hunting behind a glyph for the page that explains it.
 ///
 /// Collapsed they are icons, along with Settings — a button with a label in a
-/// 64-pixel column is a button with its label clipped, and dropping the actions
-/// instead would mean a collapsed rail could neither add a connection nor reach
-/// the docs.
+/// column that narrow is a button with its label clipped, and dropping the
+/// actions instead would mean a collapsed rail could neither add a connection
+/// nor reach the docs.
 class _RailFooter extends StatelessWidget {
   const _RailFooter({required this.collapsed});
 

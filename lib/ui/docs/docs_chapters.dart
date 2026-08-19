@@ -1619,6 +1619,36 @@ const _settings = DocsChapter(
       ],
     ),
     DocsSection(
+      id: 'updates',
+      title: 'Updates',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'The section says which build you are running. Check for updates asks '
+          'the release feed on github.com and reports one of three things: that '
+          'this is the newest release, that a newer one exists, or why it could '
+          'not tell. Nothing is sent anywhere until you press it — the page does '
+          'not phone out when it opens.',
+        ),
+        DocsProse(
+          'When there is a newer release, Update now opens it in your browser '
+          'and the command below it installs it. Dextr does not replace itself: '
+          'the application lives in /Applications, /opt or %LOCALAPPDATA%, '
+          'writing there needs your password, and a database client that could '
+          'quietly elevate itself to overwrite its own binary would be a worse '
+          'thing to have installed than the update it saves you fetching. '
+          'Updating leaves your connections, credentials and settings alone.',
+        ),
+        DocsNote(
+          title: 'If the check keeps failing',
+          description:
+              'GitHub limits unauthenticated requests per address, so an '
+              'office or VPN address shared with other people can reach the '
+              'limit without you checking often. The releases page in a '
+              'browser always works.',
+        ),
+      ],
+    ),
+    DocsSection(
       id: 'reset',
       title: 'Reset',
       blocks: <DocsBlock>[
@@ -1627,6 +1657,34 @@ const _settings = DocsChapter(
           'size, the delete confirmation and the export defaults back. It asks '
           'first, and it does not touch your connections.',
         ),
+      ],
+    ),
+    DocsSection(
+      id: 'reset-application',
+      title: 'Reset application',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'The last section of the settings page, and the only irreversible '
+          'thing in it. It removes every connection, every password and key '
+          'Dextr saved in the system keychain, and every setting — so the next '
+          'launch is a first launch. Open tabs close and live connections are '
+          'closed on the way. It asks first, and there is no undo: nothing is '
+          'exported and no backup is written.',
+        ),
+        DocsFacts(<DocsFact>[
+          DocsFact(
+            'Removed',
+            'The connections file, the settings file, and every credential under the dextr.secret. prefix in the keychain.',
+          ),
+          DocsFact(
+            'Untouched',
+            'Your databases, their contents, and any file or directory a connection merely points at — a SQLite file or a local Chroma folder is your data, not Dextr\'s.',
+          ),
+          DocsFact(
+            'If something survives',
+            'A locked or unavailable keychain is reported rather than assumed away: the message says the credentials could not be removed, and stays until you dismiss it.',
+          ),
+        ]),
       ],
     ),
   ],

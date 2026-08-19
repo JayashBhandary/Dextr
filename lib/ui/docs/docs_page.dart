@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../state/settings_provider.dart';
+import '../widgets/dextr_logo.dart';
 import 'docs_chapters.dart';
 import 'docs_content.dart';
 
@@ -117,6 +118,10 @@ class _DocsPageState extends ConsumerState<DocsPage> {
           gap: AstryxSpacingToken.spacing6,
           align: AstryxStackAlign.stretch,
           children: <Widget>[
+            // The first chapter only: the manual opens on a title page, and a
+            // mark this size above every chapter would push the prose of each
+            // one below the fold to say something the reader already knows.
+            if (_chapter.id == docsHome.id) const _DocsLogo(),
             for (final section in _chapter.sections)
               AstryxSection(
                 title: section.title,
@@ -134,6 +139,24 @@ class _DocsPageState extends ConsumerState<DocsPage> {
       ),
     );
   }
+}
+
+/// The mark at full size, opening the manual.
+///
+/// Centred and on its own line rather than beside the heading: the heading is in
+/// the pinned header, which stays put while the body scrolls, and a logo pinned
+/// to the top of every chapter is a logo in the way.
+class _DocsLogo extends StatelessWidget {
+  const _DocsLogo();
+
+  /// Large enough to be the picture on a title page and small enough to leave
+  /// the first paragraph on screen in a 900-pixel window.
+  static const double _size = 128;
+
+  @override
+  Widget build(BuildContext context) => const Center(
+    child: DextrLogo(size: _size, semanticsLabel: 'Dextr'),
+  );
 }
 
 /// The chapter list, grouped.

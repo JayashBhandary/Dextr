@@ -17,6 +17,7 @@ import 'package:dextr/ui/docs/docs_page.dart';
 import 'package:dextr/ui/shell/sidebar_connections.dart';
 import 'package:dextr/ui/shell/window_frame.dart';
 import 'package:dextr/ui/widgets/connection_actions.dart';
+import 'package:dextr/ui/widgets/dextr_logo.dart';
 import 'package:dextr/ui/widgets/page_surface.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -174,6 +175,12 @@ void main() {
     expect(wide, railExpandedWidth);
     expect(find.text('catalogue.db'), findsWidgets);
 
+    // The mark and the name at the top of it. The image decodes from the real
+    // asset bundle here, so a path that no longer exists fails this test rather
+    // than leaving a gap in the running application.
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.text('Dextr'), findsOneWidget);
+
     // The button the rail offers, named by what it would do.
     await tester.tap(find.bySemanticsLabel('Collapse the navigation'));
     await settle(tester);
@@ -186,12 +193,18 @@ void main() {
     expect(find.bySemanticsLabel('catalogue.db'), findsWidgets);
     // The one action a rail this narrow still has to carry.
     expect(find.bySemanticsLabel('New connection'), findsWidgets);
+    // The mark stays; the name beside it goes the way the row labels do, and
+    // hands its job to a screen-reader label.
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.text('Dextr'), findsNothing);
+    expect(find.bySemanticsLabel('Dextr'), findsWidgets);
 
     await tester.tap(find.bySemanticsLabel('Expand the navigation'));
     await settle(tester);
 
     expect(tester.getSize(find.byType(ConnectionsRail)).width, wide);
     expect(find.text('catalogue.db'), findsWidgets);
+    expect(find.text('Dextr'), findsOneWidget);
   });
 
   testWidgets('the window frame has an overlay of its own', (tester) async {
@@ -242,7 +255,62 @@ void main() {
     expect(find.text('Theme'), findsWidgets);
     expect(find.text('Accent'), findsWidgets);
     expect(find.text('Rows per page'), findsWidgets);
+    expect(find.text('Updates'), findsOneWidget);
     expect(find.text('Reset to defaults'), findsOneWidget);
+    expect(find.text('Reset application'), findsWidgets);
+    // The warning is on the page, not only inside the dialog: what this does
+    // has to be readable before anything is pressed.
+    expect(find.text('This cannot be undone'), findsOneWidget);
+  });
+
+  testWidgets('resetting the application asks first, then wipes storage', (
+    tester,
+  ) async {
+    sizeWindow(tester);
+    await tester.pumpWidget(app(location: '/settings'));
+    await settle(tester);
+
+    final button = find.widgetWithText(AstryxButton, 'Reset application');
+
+    /// Scrolls to the button before pressing it: it is the last control on a
+    /// page taller than the window, and closing the dialog leaves the scroll
+    /// wherever the dialog left it.
+    Future<void> pressReset() async {
+      await tester.ensureVisible(button);
+      await tester.pump();
+      await tester.tap(button);
+      await settle(tester);
+    }
+
+    await pressReset();
+
+    // The dialog interrupts, and nothing has happened yet.
+    expect(find.text('Erase everything and start over?'), findsOneWidget);
+    expect(
+      File(p.join(tmp.path, 'connections.json')).existsSync(),
+      isTrue,
+      reason: 'the confirmation must not act before it is confirmed',
+    );
+
+    // Cancelling leaves it all alone.
+    await tester.tap(find.widgetWithText(AstryxButton, 'Cancel'));
+    await settle(tester);
+    expect(find.text('Erase everything and start over?'), findsNothing);
+    expect(File(p.join(tmp.path, 'connections.json')).existsSync(), isTrue);
+
+    await pressReset();
+    await tester.tap(find.widgetWithText(AstryxButton, 'Erase everything'));
+    // Several rounds: the wipe is a chain of real file and keychain I/O, and
+    // each `settle` only lets one link of it resume.
+    for (var i = 0; i < 6; i++) {
+      await settle(tester);
+    }
+
+    expect(File(p.join(tmp.path, 'connections.json')).existsSync(), isFalse);
+    expect(File(p.join(tmp.path, 'settings.json')).existsSync(), isFalse);
+    // Said out loud, with the count: a wipe that looks like nothing happened is
+    // indistinguishable from a wipe that failed.
+    expect(find.textContaining('Application reset.'), findsOneWidget);
   });
 
   testWidgets('the new-connection form renders each backend', (tester) async {
@@ -270,11 +338,16 @@ void main() {
     await tester.pumpWidget(app(location: '/docs'));
     await settle(tester);
 
+    // The manual opens on a title page, and the mark is the picture on it.
+    expect(find.byType(DextrLogo), findsOneWidget);
+
     // A table, a key cap and a code block all drew: those are the blocks a
     // prose page fails on, and a section heading alone would also be found in
     // the outline beside it.
     await tester.tap(find.text('SQLite, PostgreSQL, MySQL').first);
     await tester.pump(const Duration(milliseconds: 100));
+    // Off the title page, the mark goes with it.
+    expect(find.byType(DextrLogo), findsNothing);
     expect(find.text('verifyFull'), findsWidgets);
     expect(
       find.text('postgresql://reader:secret@db.example.com:5432/analytics'),
@@ -365,5 +438,23 @@ class _NoSecrets extends SecretsStore {
   @override
   Future<void> delete(String secretsRef) async {
     _store.remove(secretsRef);
+  }
+
+  // The two sweeps enumerate the keychain, which in a test is a platform
+  // channel with nothing behind it. Overridden so a reset here deletes from the
+  // map above instead of failing on a MissingPluginException.
+  @override
+  Future<int> sweepOrphans(Iterable<String> liveRefs) async {
+    final live = liveRefs.toSet();
+    final orphans = _store.keys.where((k) => !live.contains(k)).toList();
+    orphans.forEach(_store.remove);
+    return orphans.length;
+  }
+
+  @override
+  Future<({int removed, bool complete})> deleteAll() async {
+    final removed = _store.length;
+    _store.clear();
+    return (removed: removed, complete: true);
   }
 }

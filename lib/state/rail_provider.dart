@@ -6,8 +6,11 @@ const railExpandedWidth = 260.0;
 /// How wide it is when it shows its icons alone.
 ///
 /// A row's icon plus the rail's own inset on both sides — wide enough that a
-/// glyph is not clipped and narrow enough to be worth collapsing for.
-const railCollapsedWidth = 64.0;
+/// glyph is not clipped and narrow enough to be worth collapsing for. Wider
+/// than the icon strictly needs: at 64 the rows sat hard against both edges,
+/// and a touch target that reaches the window edge is one a drag on the frame
+/// competes with.
+const railCollapsedWidth = 80.0;
 
 /// Whether the connections rail is showing its icons alone.
 ///

@@ -56,6 +56,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       _update(state.copyWith(exportNullText: v));
 
   Future<void> reset() => _update(const AppSettings());
+
+  /// Drops the settings back to their defaults without writing them.
+  ///
+  /// For the application reset, which deletes the settings file itself: saving
+  /// the defaults here would put a file back where a first launch has none.
+  void resetInMemory() => state = const AppSettings();
 }
 
 final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>(

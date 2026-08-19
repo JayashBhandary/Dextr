@@ -52,6 +52,15 @@ class ConnectionsRepo {
     return existing;
   }
 
+  /// Removes the connections file itself, for an application reset.
+  ///
+  /// Not `saveAll([])`: an empty file and no file load the same, and the point
+  /// of a reset is to leave nothing behind.
+  Future<void> delete() async {
+    final f = await _file();
+    if (await f.exists()) await f.delete();
+  }
+
   Future<List<ConnectionRecord>> remove(String id) async {
     final existing = await load();
     existing.removeWhere((r) => r.id == id);

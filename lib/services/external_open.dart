@@ -97,6 +97,38 @@ class ExternalOpen {
     return file.path;
   }
 
+  /// Hands a web address to the machine's browser.
+  ///
+  /// HTTPS only, and no character a Windows shell would take as an operator: on
+  /// Windows the opener *is* a `cmd` builtin, so an `&` in a URL would end the
+  /// command and start another one. Every URL this application opens is one it
+  /// built itself, and this is the check that keeps that true if one day it is
+  /// not.
+  Future<void> openUrl(Uri url) async {
+    if (!isSupported) {
+      throw UnsupportedError(
+        'Opening a link in a browser is not available on this platform.',
+      );
+    }
+    if (url.scheme != 'https') {
+      throw UnsupportedError(
+        'Dextr only opens https links, and this one is ${url.scheme}.',
+      );
+    }
+    final text = url.toString();
+    if (_shellOperators.hasMatch(text)) {
+      throw UnsupportedError(
+        'This link contains a character the system opener would take as a '
+        'command, so it will not be opened.',
+      );
+    }
+
+    await _launch(text);
+  }
+
+  /// The characters a Windows `start` invocation would act on rather than pass.
+  static final RegExp _shellOperators = RegExp('[&|^<>"\\r\\n]');
+
   /// The platform's opener, invoked with the path as one argument rather than
   /// through a shell — a file name with a space or a quote in it is common in a
   /// bucket, and a shell would take it apart.

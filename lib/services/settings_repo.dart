@@ -44,4 +44,14 @@ class SettingsRepo {
     final f = await _file();
     await f.writeAsString(settings.encode());
   }
+
+  /// Removes the settings file, so the next [load] returns the defaults.
+  ///
+  /// What an application reset calls instead of saving [AppSettings.new]:
+  /// writing the defaults back would leave a file on disk where a machine that
+  /// has never run Dextr has none.
+  Future<void> delete() async {
+    final f = await _file();
+    if (await f.exists()) await f.delete();
+  }
 }
