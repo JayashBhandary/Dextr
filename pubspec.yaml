@@ -45,14 +45,20 @@ dependencies:
   sqlite3: ^3.5.1
   sqlite3_flutter_libs: ^0.6.0+eol
 
-  # Relational drivers
+  # Relational drivers. `postgres` also reaches Amazon Redshift, which speaks
+  # the same wire protocol; Snowflake goes over HTTP via `dio` below.
   postgres: ^3.5.0
   mysql_client: ^0.0.27
 
   # NoSQL
   mongo_dart: ^0.10.4
 
-  # Firestore via REST (multi-project; not cloud_firestore)
+  # Key-value. RESP2 only, which is why the Redis connector refuses HELLO:
+  # a server switched to RESP3 answers in a shape this parser cannot read.
+  redis: ^4.1.0
+
+  # Google APIs over REST: Firestore (multi-project; not cloud_firestore) and
+  # BigQuery, both authenticated with a service-account key.
   googleapis: ^16.0.0
   googleapis_auth: ^2.3.3
 
@@ -67,7 +73,7 @@ dependencies:
   # UI: the whole widget set, plus the Lucide glyphs astryx_ui itself draws with
   # (its own AstryxIconName registry covers 28 semantic names; a database tool
   # needs tables, buckets and plugs as well).
-  astryx_ui: ^0.0.7-dev
+  astryx_ui: ^0.0.8-dev
   lucide_icons_flutter: ^3.0.0
   flutter_acrylic: ^1.1.4
 

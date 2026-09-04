@@ -10,7 +10,9 @@ const List<DocsChapter> docsChapters = <DocsChapter>[
   _firstConnection,
   _connections,
   _sqlSources,
+  _warehouseSources,
   _documentSources,
+  _keyValueSources,
   _objectStorage,
   _httpSources,
   _vectorSources,
@@ -633,6 +635,318 @@ const _sqlSources = DocsChapter(
   ],
 );
 
+const _warehouseSources = DocsChapter(
+  id: 'warehouse-sources',
+  group: DocsGroup.connect,
+  title: 'Redshift, Snowflake, BigQuery',
+  summary:
+      'Three cloud warehouses, three different ways in — and the two things '
+      'that behave unlike a database you host yourself.',
+  sections: <DocsSection>[
+    DocsSection(
+      id: 'warehouses-differ',
+      title: 'Why these are three kinds and not one',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'They answer the same questions — tables, columns, SQL — and reach '
+          'you over three unrelated transports. Redshift speaks the '
+          'PostgreSQL wire protocol over a socket, Snowflake speaks HTTP, and '
+          'BigQuery speaks a Google API. What you type to connect is different '
+          'for each, so each has its own entry in the picker.',
+        ),
+        DocsTable(
+          label: 'How each warehouse is reached, and what it can do',
+          headers: <String>['Warehouse', 'Reached by', 'Grid edits', 'Transactions'],
+          rows: <List<String>>[
+            <String>[
+              'Amazon Redshift',
+              'Postgres protocol, port 5439',
+              'Yes',
+              'Yes',
+            ],
+            <String>[
+              'Snowflake',
+              'SQL REST API, a bearer token',
+              'Yes',
+              'No',
+            ],
+            <String>[
+              'BigQuery',
+              'REST API, a service-account key',
+              'No',
+              'No',
+            ],
+          ],
+        ),
+      ],
+    ),
+    DocsSection(
+      id: 'redshift',
+      title: 'Amazon Redshift — Postgres, mostly',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'Redshift forked from PostgreSQL 8.0 and still answers the same '
+          'handshake, so Dextr reaches it with the same driver. Type the '
+          'cluster out field by field, or switch the form to Endpoint and '
+          'paste what the AWS console gives you — host, port and database in '
+          'one string, parsed back into the fields when you save or test.',
+        ),
+        DocsCode(
+          'my-cluster.abc123.eu-west-1.redshift.amazonaws.com:5439/dev',
+          language: 'text',
+        ),
+        DocsFacts(<DocsFact>[
+          DocsFact('Host and port', '5439, not 5432. A cluster is created on it.'),
+          DocsFact('Database', '"dev" on a new provisioned cluster.'),
+          DocsFact('Username', '"awsuser" is the superuser a cluster is created with.'),
+          DocsFact(
+            'SSL mode',
+            'Choose verifyFull. Redshift presents a certificate from a public '
+            'authority, so unlike MySQL here, verification actually works.',
+          ),
+        ]),
+        DocsProse(
+          'Two places where Redshift is not Postgres, and Dextr says so '
+          'rather than sending SQL the cluster will reject:',
+        ),
+        DocsBullets(<String>[
+          'Inserting a row cannot report what the server stored. Redshift has no RETURNING clause, so a default or an IDENTITY column is not known until the row is read again.',
+          'A column type cannot be changed in place, except to widen a varchar — and never for a column in the sort or distribution key. The Schema pane will tell you to do it in the Query pane instead: ADD a column, UPDATE it from the old one, DROP the old one, RENAME.',
+        ]),
+      ],
+    ),
+    DocsSection(
+      id: 'snowflake',
+      title: 'Snowflake — over the SQL REST API',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'There is no Snowflake wire-protocol driver for Dart, so Dextr uses '
+          'the documented SQL REST API instead: one statement per request. It '
+          'works well for what this application does, and it costs two things '
+          'worth knowing before you connect.',
+        ),
+        DocsFacts(<DocsFact>[
+          DocsFact(
+            'Account identifier',
+            'The part of your Snowflake URL before .snowflakecomputing.com, such as xy12345.eu-west-1. The form shows the host it will call, so a wrong identifier is visible before you test.',
+          ),
+          DocsFact(
+            'Warehouse',
+            'Required. Without one there is no compute to run a query on.',
+          ),
+          DocsFact(
+            'Database and schema',
+            'The database is what the rail lists tables from. The schema is the default for unqualified names.',
+          ),
+          DocsFact(
+            'Role',
+            'Left empty, your default role.',
+          ),
+          DocsFact(
+            'Token',
+            'A programmatic access token or an OAuth access token. Goes to the keychain.',
+          ),
+        ]),
+        DocsNote(
+          kind: DocsNoteKind.info,
+          title: 'Key-pair authentication is not offered',
+          description:
+              'Snowflake recommends it, and it works by signing a JWT with an '
+              'RSA private key. Dart has no RSA primitive and neither does '
+              'anything Dextr depends on, so the option is absent rather than '
+              'present and broken. A programmatic access token is the closest '
+              'equivalent: scope it to a role and give it an expiry.',
+        ),
+        DocsNote(
+          kind: DocsNoteKind.warning,
+          title: 'No transactions',
+          description:
+              'A transaction is a session, and every statement here is its own '
+              'HTTP request and its own session — there is nowhere for a BEGIN '
+              'to live between two of them. The Query pane will not offer one.',
+        ),
+        DocsProse(
+          'A statement that runs longer than the synchronous window comes back '
+          'as a handle rather than a result, and Dextr polls it for up to two '
+          'minutes. Past that the query is still running in Snowflake; the '
+          'message tells you the handle so you can find it there.',
+        ),
+      ],
+    ),
+    DocsSection(
+      id: 'bigquery',
+      title: 'BigQuery — and the bill',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'Pick the service-account JSON key and the project ID is read out of '
+          'it. The role needs BigQuery Data Viewer to read and BigQuery Job '
+          'User to run a query. Location can be left empty; BigQuery works it '
+          'out from the tables a query names.',
+        ),
+        DocsProse(
+          'BigQuery bills by the byte scanned, which makes it the one '
+          'connection in Dextr where a mistake costs money rather than time. '
+          'Two things are built around that.',
+        ),
+        DocsBullets(<String>[
+          'Browsing a table is free. Opening one in the rail reads rows straight out of storage, which BigQuery does not bill as a query at all. Sorting or filtering that browse needs SQL, and SQL is billed.',
+          'Every query is capped. "Maximum data scanned per query" is sent with each one, and BigQuery refuses a query that would exceed it before running any of it. The default is 1 GiB. Setting it to zero removes the limit, and the form says so.',
+        ]),
+        DocsNote(
+          kind: DocsNoteKind.info,
+          title: 'The grid is read-only for BigQuery',
+          description:
+              'BigQuery has no enforced primary key, so no WHERE clause '
+              'identifies exactly one row — an edit could rewrite two '
+              'identical rows without saying so. INSERT, UPDATE and DELETE all '
+              'work in the Query pane, where what they match is written out '
+              'and visible.',
+        ),
+        DocsProse(
+          'Nested and repeated columns are shown as JSON in one cell. A STRUCT '
+          'becomes an object keyed by its field names and an ARRAY becomes a '
+          'list, because a grid column holds one value and an array\'s length '
+          'is a property of the row.',
+        ),
+      ],
+    ),
+  ],
+);
+
+const _keyValueSources = DocsChapter(
+  id: 'key-value-sources',
+  group: DocsGroup.connect,
+  title: 'Redis',
+  summary:
+      'Keys instead of rows: what a container is, what a row is, and which '
+      'edits the grid will make.',
+  sections: <DocsSection>[
+    DocsSection(
+      id: 'redis-connect',
+      title: 'Connecting',
+      blocks: <DocsBlock>[
+        DocsFacts(<DocsFact>[
+          DocsFact('Host and port', '6379 for a local redis-server.'),
+          DocsFact(
+            'Database',
+            'Which numbered database to open on. The rail lists the others beside it, so this is a starting point rather than a restriction.',
+          ),
+          DocsFact(
+            'Username',
+            'A Redis 6 ACL user. Leave it empty for a server with a plain requirepass, and empty with no password for one with no authentication at all.',
+          ),
+          DocsFact(
+            'Connect over TLS',
+            'Required by most managed Redis. Off for a local redis-server, which does not listen for TLS unless it was built for it.',
+          ),
+        ]),
+        DocsNote(
+          kind: DocsNoteKind.danger,
+          title: 'Redis AUTH sends the password as a plain argument',
+          description:
+              'Without TLS, anything on the network path reads the password and '
+              'then every key with it. Dextr says this in the form as soon as '
+              'there is a password and a host that is not local. Turn TLS on, '
+              'or reach the server through an SSH tunnel.',
+        ),
+      ],
+    ),
+    DocsSection(
+      id: 'redis-shape',
+      title: 'What a container and a row are',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'Redis has no tables, so Dextr picks the only grouping Redis itself '
+          'has: a container is one of the server\'s numbered databases, listed '
+          'in the rail as db0, db1 and so on. A row is one key.',
+        ),
+        DocsTable(
+          label: 'The five columns every Redis key has',
+          headers: <String>['Column', 'What it is'],
+          rows: <List<String>>[
+            <String>['key', 'The key name. This is the row\'s identity.'],
+            <String>['type', 'string, list, set, hash, zset, stream — or a module type.'],
+            <String>['ttl', 'Seconds left, or empty for a key with no expiry.'],
+            <String>['size', 'The real length: bytes for a string, elements for everything else.'],
+            <String>['value', 'A capped preview. Not the whole value.'],
+          ],
+        ),
+        DocsProse(
+          'The value column is a preview on purpose. A string can be half a '
+          'gigabyte and a list can be millions of elements, so Dextr reads a '
+          'bounded prefix of each — the first 512 bytes of a string, the first '
+          '20 elements of anything else — and the size column tells you the '
+          'real length beside it.',
+        ),
+        DocsNote(
+          kind: DocsNoteKind.info,
+          title: 'Paging walks the keyspace rather than jumping into it',
+          description:
+              'Redis SCAN has a cursor and no offset, so asking for a later '
+              'page means scanning past the earlier ones. That is what makes a '
+              'scan safe while keys are being added and removed, and it is why '
+              'no total key count is shown: nothing short of a full scan knows '
+              'it.',
+        ),
+      ],
+    ),
+    DocsSection(
+      id: 'redis-edit',
+      title: 'Editing, and what is refused',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'The grid makes the edits it can round-trip honestly:',
+        ),
+        DocsBullets(<String>[
+          'The value of a string key. Typing in the cell is a SET.',
+          'The TTL of any key. Clearing the cell is a PERSIST, not an expiry of zero — which would delete the key.',
+          'The key name. Renaming the cell is a RENAME.',
+          'Deleting a row deletes the key, whatever its type.',
+        ]),
+        DocsProse(
+          'Editing the value of a hash, list, set, sorted set or stream is '
+          'refused, and the message names the command to use instead. The '
+          'reason is the preview: writing a capped view of a million-element '
+          'list back to Redis would replace the list with what is on screen. '
+          'That is a data loss dressed up as an edit.',
+        ),
+      ],
+    ),
+    DocsSection(
+      id: 'redis-commands',
+      title: 'The Query pane takes one command',
+      blocks: <DocsBlock>[
+        DocsProse(
+          'Redis has no query language, so the Query pane takes a single '
+          'command written the way redis-cli takes it — quotes group, and a '
+          'backslash inside double quotes escapes.',
+        ),
+        DocsCode(
+          'HSET user:1 name "Ada Lovelace" role admin',
+          language: 'text',
+        ),
+        DocsProse(
+          'A reply that is a single value comes back as one row. A reply that '
+          'is an array comes back as one row per element with its position '
+          'beside it, which is what makes a flat HGETALL reply — field, value, '
+          'field, value — readable.',
+        ),
+        DocsNote(
+          kind: DocsNoteKind.info,
+          title: 'A few commands are refused, and none of them for your own good',
+          description:
+              'FLUSHALL and DEL run: if you typed them into a database client '
+              'you meant them. What is refused is the handful that break the '
+              'connection rather than the data — SUBSCRIBE, PSUBSCRIBE and '
+              'MONITOR stream forever and answer nothing, HELLO renegotiates '
+              'to a protocol version this client cannot read, and RESET and '
+              'QUIT end the session. Use redis-cli for those.',
+        ),
+      ],
+    ),
+  ],
+);
+
 const _documentSources = DocsChapter(
   id: 'document-sources',
   group: DocsGroup.connect,
@@ -1090,6 +1404,14 @@ const _query = DocsChapter(
           'On Windows and Linux, Ctrl is the modifier. Nothing runs on its own: '
           'there is no autorun, and no statement is sent that you did not ask '
           'for.',
+        ),
+        DocsProse(
+          'A run stops at 10,000 rows. Where the source is SQL, that ceiling is '
+          'sent as a LIMIT, so the rows never leave the server; a result that '
+          'hits it says so above the table, and an export from there carries '
+          'those rows and no more. Write your own LIMIT and it is left alone — '
+          'yours is a decision, not a guess. The table itself shows one page at '
+          'a time, at the page size in Settings.',
         ),
       ],
     ),

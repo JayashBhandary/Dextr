@@ -6,14 +6,15 @@ import '../../state/active_source_provider.dart';
 import '../../state/workspace_provider.dart';
 import '../widgets/dextr_icons.dart';
 import '../widgets/dextr_more_menu.dart';
+import 'workspace_hotkeys.dart';
 
 /// The strip of open objects across the top of the workspace.
 ///
-/// The tabs carry no close button of their own: `AstryxTab` is a value in a
-/// strip, not a container for another control, and a button inside a tab is a
-/// second interactive element inside one tab stop. Closing lives on ⌘/Ctrl+W
-/// and in the menu at the end of the strip, where it is still visible and still
-/// reachable from the keyboard.
+/// Every tab carries its own close button: `AstryxTab.onClose` draws one after
+/// the label, always visible rather than revealed on hover, and keeps it as a
+/// semantics node of its own beside the tab. Closing is also on ⌘/Ctrl+W, on
+/// Delete or Backspace while the strip holds focus, and in the menu at the end
+/// of the strip — the same close reachable four ways, none of them the only one.
 class WorkspaceTabBar extends ConsumerWidget {
   const WorkspaceTabBar({super.key});
 
@@ -43,7 +44,14 @@ class WorkspaceTabBar extends ConsumerWidget {
                   onChanged: notifier.activate,
                   tabs: <AstryxTab<String>>[
                     for (final tab in tabs)
-                      AstryxTab<String>(value: tab.id, label: tab.label()),
+                      AstryxTab<String>(
+                        value: tab.id,
+                        label: tab.label(),
+                        // Named after what is being closed, because "Close" on
+                        // eight tabs is eight identical announcements.
+                        closeLabel: 'Close ${tab.label()}',
+                        onClose: () => notifier.closeTab(tab.id),
+                      ),
                   ],
                 ),
         ),
@@ -61,20 +69,13 @@ class WorkspaceTabBar extends ConsumerWidget {
           entries: <AstryxMenuEntry>[
             AstryxMenuItem(
               label: 'Close tab',
-              trailing: const AstryxKbd.chord(<String>[
-                '⌘',
-                'W',
-              ], semanticsLabel: 'Command W'),
+              trailing: const AstryxKbd.hotkey(closeTabHotkey),
               enabled: workspace.activeTabId != null,
               onSelected: notifier.closeActiveTab,
             ),
             AstryxMenuItem(
               label: 'Close all tabs',
-              trailing: const AstryxKbd.chord(<String>[
-                '⌘',
-                '⌥',
-                'W',
-              ], semanticsLabel: 'Command Option W'),
+              trailing: const AstryxKbd.hotkey(closeAllTabsHotkey),
               enabled: tabs.isNotEmpty,
               onSelected: notifier.closeAllTabs,
             ),

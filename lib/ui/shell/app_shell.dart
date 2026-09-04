@@ -1,5 +1,4 @@
 import 'package:astryx_ui/astryx_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,11 +6,11 @@ import 'package:go_router/go_router.dart';
 import '../../state/active_source_provider.dart';
 import '../../state/connections_provider.dart';
 import '../../state/rail_provider.dart';
-import '../../state/workspace_provider.dart';
 import '../widgets/dextr_icons.dart';
 import '../workspace/workspace_page.dart';
 import 'sidebar_connections.dart';
 import 'window_frame.dart';
+import 'workspace_hotkeys.dart';
 
 /// The window width below which the rail moves into a drawer.
 const _compactBelow = 820.0;
@@ -22,22 +21,22 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeId = ref.watch(activeConnectionIdProvider);
-    final workspace = ref.read(workspaceProvider.notifier);
     final collapsed = ref.watch(railCollapsedProvider);
 
-    // Autofocus, because a key event is dispatched from whatever holds focus
-    // and walks upwards: without a focused node inside the scope, ⌘W on a
-    // freshly opened window would do nothing.
+    // Only the rail's own shortcut lives here. Closing a tab is bound above the
+    // router in `DextrApp`, because a key event walks *up* from whatever holds
+    // focus: an open menu, dialog or popover is mounted in the overlay above
+    // this route, so a scope down here never sees ⌘W once one is open.
+    //
+    // Autofocus, because until something inside the scope is focused there is
+    // nothing for the event to walk through: ⌘B on a freshly opened window
+    // would do nothing at all.
     return AstryxHotkeys(
       autofocus: true,
       bindings: <AstryxHotkey, VoidCallback>{
-        const AstryxHotkey.mod(LogicalKeyboardKey.keyW):
-            workspace.closeActiveTab,
-        const AstryxHotkey.mod(LogicalKeyboardKey.keyW, alt: true):
-            workspace.closeAllTabs,
         // The same key every editor collapses its file tree with, for the same
         // reason: the rail is not what is being read while a query is written.
-        const AstryxHotkey.mod(LogicalKeyboardKey.keyB): () =>
+        toggleRailHotkey: () =>
             ref.read(railCollapsedProvider.notifier).update((value) => !value),
       },
       // The width is decided out here because the collapsed rail is only the

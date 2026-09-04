@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../connectors/mysql/mysql_ssl.dart';
 import '../../connectors/registry.dart';
+import '../../connectors/snowflake/snowflake_types.dart';
 import '../../connectors/vector/vector_types.dart';
 import '../../core/capabilities.dart';
 import '../../domain/connection_record.dart';
@@ -13,13 +14,17 @@ import '../../domain/connection_secrets.dart';
 import '../../services/file_access.dart';
 import '../../state/connections_provider.dart';
 import '../../state/providers.dart';
+import 'forms/bigquery_form.dart';
 import 'forms/firestore_form.dart';
 import 'forms/graphql_form.dart';
 import 'forms/mongo_form.dart';
 import 'forms/mysql_form.dart';
 import 'forms/postgres_form.dart';
+import 'forms/redis_form.dart';
+import 'forms/redshift_form.dart';
 import 'forms/rest_form.dart';
 import 'forms/s3_form.dart';
+import 'forms/snowflake_form.dart';
 import 'forms/sqlite_form.dart';
 import 'forms/vector_form.dart';
 import 'kind_picker.dart';
@@ -127,6 +132,39 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     'sslMode': r.sslMode,
   };
 
+  /// Same five fields as Postgres, because it is the same wire protocol. The
+  /// kind they are saved under is what tells the connector it is Redshift.
+  Map<String, Object?> _redshiftConfig(RedshiftFormResult r) => {
+    'host': r.host,
+    'port': r.port,
+    'database': r.database,
+    'username': r.username,
+    'sslMode': r.sslMode,
+  };
+
+  Map<String, Object?> _snowflakeConfig(SnowflakeFormResult r) => {
+    'account': r.account,
+    'warehouse': r.warehouse,
+    'database': r.database,
+    if (r.schema.isNotEmpty) 'schema': r.schema,
+    if (r.role.isNotEmpty) 'role': r.role,
+    'authMode': r.authMode.name,
+  };
+
+  Map<String, Object?> _bigqueryConfig(BigqueryFormResult r) => {
+    'projectId': r.projectId,
+    if (r.location.isNotEmpty) 'location': r.location,
+    'maximumBytesBilled': r.maximumBytesBilled,
+  };
+
+  Map<String, Object?> _redisConfig(RedisFormResult r) => {
+    'host': r.host,
+    'port': r.port,
+    'db': r.db,
+    if (r.username.isNotEmpty) 'username': r.username,
+    'tls': r.tls,
+  };
+
   Map<String, Object?> _mysqlConfig(MysqlFormResult r) => {
     'host': r.host,
     'port': r.port,
@@ -182,6 +220,28 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
   Future<void> _testPostgres(PostgresFormResult r) => _testRecord(
     _testStub(DataSourceKind.postgres, _postgresConfig(r)),
     ConnectionSecrets(password: r.password),
+  );
+
+  Future<void> _testRedshift(RedshiftFormResult r) => _testRecord(
+    _testStub(DataSourceKind.redshift, _redshiftConfig(r)),
+    ConnectionSecrets(password: r.password),
+  );
+
+  /// The token goes in `bearerToken` for both Snowflake modes, because that is
+  /// what it is on the wire — the header says which of the two it means.
+  Future<void> _testSnowflake(SnowflakeFormResult r) => _testRecord(
+    _testStub(DataSourceKind.snowflake, _snowflakeConfig(r)),
+    ConnectionSecrets(bearerToken: r.token),
+  );
+
+  Future<void> _testBigquery(BigqueryFormResult r) => _testRecord(
+    _testStub(DataSourceKind.bigquery, _bigqueryConfig(r)),
+    ConnectionSecrets(serviceAccountJson: r.serviceAccountJson),
+  );
+
+  Future<void> _testRedis(RedisFormResult r) => _testRecord(
+    _testStub(DataSourceKind.redis, _redisConfig(r)),
+    ConnectionSecrets(password: r.password.isEmpty ? null : r.password),
   );
 
   Future<void> _testMysql(MysqlFormResult r) => _testRecord(
@@ -367,6 +427,76 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     await _afterSave();
   }
 
+  Future<void> _saveRedshift(RedshiftFormResult r) async {
+    final secretsRef = _secretsRefId;
+    final record = ConnectionRecord(
+      id: _recordId,
+      name: r.name,
+      kind: DataSourceKind.redshift,
+      config: _redshiftConfig(r),
+      secretsRef: secretsRef,
+    );
+    await ref
+        .read(secretsStoreProvider)
+        .write(secretsRef, ConnectionSecrets(password: r.password));
+    await ref.read(connectionsProvider.notifier).upsert(record);
+    await _afterSave();
+  }
+
+  Future<void> _saveSnowflake(SnowflakeFormResult r) async {
+    final secretsRef = _secretsRefId;
+    final record = ConnectionRecord(
+      id: _recordId,
+      name: r.name,
+      kind: DataSourceKind.snowflake,
+      config: _snowflakeConfig(r),
+      secretsRef: secretsRef,
+    );
+    await ref
+        .read(secretsStoreProvider)
+        .write(secretsRef, ConnectionSecrets(bearerToken: r.token));
+    await ref.read(connectionsProvider.notifier).upsert(record);
+    await _afterSave();
+  }
+
+  Future<void> _saveBigquery(BigqueryFormResult r) async {
+    final secretsRef = _secretsRefId;
+    final record = ConnectionRecord(
+      id: _recordId,
+      name: r.name,
+      kind: DataSourceKind.bigquery,
+      config: _bigqueryConfig(r),
+      secretsRef: secretsRef,
+    );
+    await ref
+        .read(secretsStoreProvider)
+        .write(
+          secretsRef,
+          ConnectionSecrets(serviceAccountJson: r.serviceAccountJson),
+        );
+    await ref.read(connectionsProvider.notifier).upsert(record);
+    await _afterSave();
+  }
+
+  Future<void> _saveRedis(RedisFormResult r) async {
+    final secretsRef = _secretsRefId;
+    final record = ConnectionRecord(
+      id: _recordId,
+      name: r.name,
+      kind: DataSourceKind.redis,
+      config: _redisConfig(r),
+      secretsRef: secretsRef,
+    );
+    await ref
+        .read(secretsStoreProvider)
+        .write(
+          secretsRef,
+          ConnectionSecrets(password: r.password.isEmpty ? null : r.password),
+        );
+    await ref.read(connectionsProvider.notifier).upsert(record);
+    await _afterSave();
+  }
+
   Future<void> _savePostgres(PostgresFormResult r) async {
     final secretsRef = _secretsRefId;
     final record = ConnectionRecord(
@@ -415,6 +545,46 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
     username: _cfgStr('username', 'postgres'),
     password: _secrets?.password ?? '',
     sslMode: _cfgStr('sslMode', 'require'),
+  );
+
+  RedshiftFormResult get _initRedshift => RedshiftFormResult(
+    name: widget.editing!.name,
+    host: _cfgStr('host'),
+    port: _cfgInt('port') ?? 5439,
+    database: _cfgStr('database', 'dev'),
+    username: _cfgStr('username', 'awsuser'),
+    password: _secrets?.password ?? '',
+    sslMode: _cfgStr('sslMode', 'require'),
+  );
+
+  SnowflakeFormResult get _initSnowflake => SnowflakeFormResult(
+    name: widget.editing!.name,
+    account: _cfgStr('account'),
+    warehouse: _cfgStr('warehouse'),
+    database: _cfgStr('database'),
+    schema: _cfgStr('schema', 'PUBLIC'),
+    role: _cfgStr('role'),
+    authMode: SnowflakeAuth.fromName(widget.editing!.config['authMode']),
+    token: _secrets?.bearerToken ?? '',
+  );
+
+  BigqueryFormResult get _initBigquery => BigqueryFormResult(
+    name: widget.editing!.name,
+    projectId: _cfgStr('projectId'),
+    location: _cfgStr('location'),
+    maximumBytesBilled:
+        (widget.editing!.config['maximumBytesBilled'] as num?)?.toInt() ?? 0,
+    serviceAccountJson: _secrets?.serviceAccountJson,
+  );
+
+  RedisFormResult get _initRedis => RedisFormResult(
+    name: widget.editing!.name,
+    host: _cfgStr('host', 'localhost'),
+    port: _cfgInt('port') ?? 6379,
+    db: _cfgInt('db') ?? 0,
+    username: _cfgStr('username'),
+    password: _secrets?.password ?? '',
+    tls: _cfgBool('tls', false),
   );
 
   MysqlFormResult get _initMysql => MysqlFormResult(
@@ -585,6 +755,30 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
       onTest: _testMysql,
       onCancel: _cancel,
       initial: _isEdit ? _initMysql : null,
+    ),
+    DataSourceKind.redshift => RedshiftForm(
+      onSubmit: _saveRedshift,
+      onTest: _testRedshift,
+      onCancel: _cancel,
+      initial: _isEdit ? _initRedshift : null,
+    ),
+    DataSourceKind.snowflake => SnowflakeForm(
+      onSubmit: _saveSnowflake,
+      onTest: _testSnowflake,
+      onCancel: _cancel,
+      initial: _isEdit ? _initSnowflake : null,
+    ),
+    DataSourceKind.bigquery => BigqueryForm(
+      onSubmit: _saveBigquery,
+      onTest: _testBigquery,
+      onCancel: _cancel,
+      initial: _isEdit ? _initBigquery : null,
+    ),
+    DataSourceKind.redis => RedisForm(
+      onSubmit: _saveRedis,
+      onTest: _testRedis,
+      onCancel: _cancel,
+      initial: _isEdit ? _initRedis : null,
     ),
     DataSourceKind.firestore => FirestoreForm(
       onSubmit: _saveFirestore,

@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../connectors/data_source.dart';
 import '../../core/export/tabular_export.dart';
+import '../../core/cell_value.dart';
 import '../../core/sql/sql_completion.dart';
+import '../../core/sql/sql_row_cap.dart';
 import '../../domain/workspace_tab.dart';
 import '../../services/export_service.dart';
 import '../../state/active_source_provider.dart';
@@ -414,8 +416,17 @@ class _QueryPaneState extends ConsumerState<QueryPane> {
             ExportDialog(
               controller: _export,
               title: 'Export the results',
-              description:
-                  'The rows the last run returned. The query is not run again.',
+              description: ref.watch(
+                    queryRunnerProvider.select((e) => e.truncated),
+                  )
+                  // The ceiling has to be said here as well as beside the grid:
+                  // a file that is quietly the first ten thousand rows of an
+                  // answer is worse than no file.
+                  ? 'The rows the last run returned — the first $maxQueryRows '
+                        'of them, which is where the run stopped. The query is '
+                        'not run again.'
+                  : 'The rows the last run returned. The query is not run '
+                        'again.',
               baseName: widget.container?.name ?? 'query-results',
               tableName: widget.container?.qualified ?? 'query_results',
               sources: <ExportSource>[
@@ -513,16 +524,51 @@ class _EditorStatusState extends State<_EditorStatus> {
 }
 
 /// The result half: what came back, or why nothing did.
-class _QueryResults extends ConsumerWidget {
+///
+/// The rows are paged here rather than fetched a page at a time, because a raw
+/// result set has no cursor to page against: what the run brought back is what
+/// there is. Paging it anyway is what keeps the grid honest — `AstryxTable`
+/// does not virtualise, so a page of rows on screen is a page of row widgets,
+/// and handing it ten thousand was the pane locking up for the length of a
+/// build.
+class _QueryResults extends ConsumerStatefulWidget {
   const _QueryResults();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_QueryResults> createState() => _QueryResultsState();
+}
+
+class _QueryResultsState extends ConsumerState<_QueryResults> {
+  /// The first row of the page on screen.
+  int _offset = 0;
+
+  @override
+  Widget build(BuildContext context) {
     final execution = ref.watch(queryRunnerProvider);
-    final density = ref.watch(
-      settingsProvider.select((settings) => settings.density),
-    );
+    final settings = ref.watch(settingsProvider);
     final result = execution.result;
+
+    // A new result is a new set of rows, and the page the last one was left on
+    // means nothing in it. Reset outside the build: this runs during one.
+    ref.listen(queryRunnerProvider.select((e) => e.result), (_, _) {
+      if (_offset != 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _offset = 0);
+        });
+      }
+    });
+
+    final total = result?.rows.length ?? 0;
+    final pageSize = settings.pageSize;
+    // Clamped rather than trusted: a rebuild can arrive between the reset above
+    // and the frame that applies it.
+    final offset = _offset >= total ? 0 : _offset;
+    final page = result == null
+        ? const <RowData>[]
+        : result.rows.sublist(
+            offset,
+            (offset + pageSize).clamp(0, total),
+          );
 
     // Flexed by the caller rather than here: how much of the pane this half
     // takes is now the handle's business, and a widget that decides its own
@@ -540,6 +586,18 @@ class _QueryResults extends ConsumerWidget {
             description: '$error',
             onDismiss: ref.read(queryRunnerProvider.notifier).clear,
           ),
+        // Said once, in full: the count in the summary line is a ceiling and
+        // the export below it will carry the same rows and no more.
+        if (execution.truncated)
+          const AstryxBanner(
+            status: AstryxBannerStatus.warning,
+            title: 'Showing the first $maxQueryRows rows',
+            description:
+                'The query matched more than that. Add a LIMIT, or narrow the '
+                'WHERE clause, to see a result that is all of itself — an '
+                'export from here carries these rows only.',
+          ),
+        if (total > pageSize) _pager(total: total, offset: offset),
         Expanded(
           child: result == null
               ? const AstryxCenter(
@@ -552,8 +610,8 @@ class _QueryResults extends ConsumerWidget {
               : DextrDataGrid(
                   label: 'Query results',
                   columns: result.columns,
-                  rows: result.rows,
-                  density: density,
+                  rows: page,
+                  density: settings.density,
                   emptyState: AstryxEmptyState(
                     title: result.affectedRows != null
                         ? '${result.affectedRows} rows affected'
@@ -565,6 +623,56 @@ class _QueryResults extends ConsumerWidget {
                     size: AstryxEmptyStateSize.compact,
                   ),
                 ),
+        ),
+      ],
+    );
+  }
+
+  /// Which rows are on screen, and the way to the next of them.
+  ///
+  /// The same shape as the browse pane's: the two arrows are a toolbar, so the
+  /// pair is one tab stop, and the range is words beside it rather than a page
+  /// number — a result set has no page numbers a reader would recognise.
+  Widget _pager({required int total, required int offset}) {
+    final pageSize = ref.read(settingsProvider).pageSize;
+    final last = (offset + pageSize).clamp(0, total);
+
+    return AstryxHStack(
+      gap: AstryxSpacingToken.spacing2,
+      mainAxisSize: MainAxisSize.max,
+      children: <Widget>[
+        AstryxToolbar(
+          label: 'Result rows',
+          children: <Widget>[
+            AstryxIconButton(
+              icon: AstryxIconName.chevronLeft,
+              label: 'Previous rows',
+              tooltip: 'Previous rows',
+              variant: AstryxButtonVariant.ghost,
+              size: AstryxButtonSize.sm,
+              onPressed: offset == 0
+                  ? null
+                  : () => setState(
+                      () => _offset = (offset - pageSize).clamp(0, total),
+                    ),
+            ),
+            AstryxIconButton(
+              icon: AstryxIconName.chevronRight,
+              label: 'Next rows',
+              tooltip: 'Next rows',
+              variant: AstryxButtonVariant.ghost,
+              size: AstryxButtonSize.sm,
+              onPressed: last >= total
+                  ? null
+                  : () => setState(() => _offset = offset + pageSize),
+            ),
+          ],
+        ),
+        AstryxText(
+          'rows ${offset + 1}–$last of $total',
+          type: AstryxTextType.supporting,
+          color: AstryxTextColor.secondary,
+          tabularNumbers: true,
         ),
       ],
     );
@@ -591,7 +699,9 @@ class _ResultSummary extends StatelessWidget {
 
     final details = <String>[
       if (result != null)
-        result.rows.length == 1 ? '1 row' : '${result.rows.length} rows',
+        result.rows.length == 1
+            ? '1 row'
+            : '${result.rows.length}${execution.truncated ? '+' : ''} rows',
       if (result?.affectedRows != null) '${result!.affectedRows} affected',
       if (result?.elapsed != null) '${result!.elapsed!.inMilliseconds} ms',
     ];

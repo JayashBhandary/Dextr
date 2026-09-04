@@ -1,5 +1,15 @@
 import '../../core/query_spec.dart';
 
+/// Quote an identifier the way the SQL standard does: double quotes, with an
+/// embedded quote doubled.
+///
+/// Every dialect here writes an identifier this way — Postgres, Redshift,
+/// Snowflake, BigQuery's standard SQL when it is not using backticks — so it
+/// lives once rather than four times. A dialect that needs something else
+/// passes its own [SqlQueryBuilder.quote].
+String ansiQuoteIdent(String identifier) =>
+    '"${identifier.replaceAll('"', '""')}"';
+
 class BuiltSql {
   const BuiltSql(this.sql, this.params);
   final String sql;

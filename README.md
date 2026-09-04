@@ -6,8 +6,9 @@
 
 **One workspace for every data source.**
 
-A cross-platform desktop client for SQL, NoSQL, object storage, and HTTP APIs —
-browse, edit, and query them all side by side.
+A cross-platform desktop client for SQL, cloud warehouses, NoSQL, key-value
+stores, object storage, and HTTP APIs — browse, edit, and query them all side by
+side.
 
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-1f6feb)](#supported-platforms)
 [![Built with Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
@@ -43,8 +44,12 @@ keychain, not in your shell history.
 | SQLite | ✓ | SQL | local file, via FFI |
 | PostgreSQL | ✓ | SQL | |
 | MySQL | ✓ | SQL | |
+| Amazon Redshift | ✓ | SQL | Postgres wire protocol, port 5439 |
+| Snowflake | ✓ | SQL | via the SQL REST API; no transactions |
+| BigQuery | read-only | SQL | via REST; free browse, capped query spend |
 | MongoDB | ✓ | query doc | |
 | Firestore | ✓ | — | via REST, multi-project |
+| Redis | ✓ | one command | keys, types and TTLs; databases as containers |
 | S3 / MinIO | ✓ | — | hierarchical file browser, presigned URLs |
 | REST API | ✓ | endpoint | saved operations |
 | GraphQL API | ✓ | endpoint | saved operations |
@@ -53,6 +58,67 @@ keychain, not in your shell history.
 Each connector advertises its capabilities — raw query, write, schema
 read/mutate, transactions, object storage, file browse, endpoint invoke, vector
 search — and the UI adapts to what the backend actually supports.
+
+### Cloud warehouses
+
+Three of them, and three separate connection kinds rather than one with a
+provider switch — because they answer the same questions over three unrelated
+transports, and what you type to connect is different for each.
+
+| Warehouse | Reached by | Grid edits | Transactions |
+|-----------|------------|:---:|:---:|
+| Amazon Redshift | Postgres wire protocol, port 5439 | ✓ | ✓ |
+| Snowflake | SQL REST API, bearer token | ✓ | — |
+| BigQuery | REST API, service-account key | — | — |
+
+**Redshift** forked from PostgreSQL 8.0 and still answers the same handshake, so
+it shares the driver, the quoting and the `information_schema` queries with the
+Postgres connector (`PgWireDataSource`). Where twenty years of divergence shows
+is the SQL, and the connector declares it rather than sending statements the
+cluster rejects: no `RETURNING` on an insert, and no `ALTER COLUMN ... TYPE`
+except to widen a `varchar`. The form also takes a pasted console endpoint —
+`cluster.abc123.eu-west-1.redshift.amazonaws.com:5439/dev` — and parses it into
+the fields.
+
+**Snowflake** has no wire-protocol driver for Dart, so it is reached over the
+documented SQL REST API: one statement per request, polled when a statement
+outruns the synchronous window. Two consequences are stated in the form rather
+than discovered later — there are no transactions, because a transaction is a
+session and each request is its own, and key-pair authentication is not offered,
+because it needs an RSA signature that neither Dart nor any dependency here can
+produce. A programmatic access token or an OAuth token is what it takes instead.
+
+**BigQuery** is the one connection where a mistake costs money, so it is built
+around that. Browsing a table goes through `tabledata.list`, which reads rows
+out of storage and is not billed as a query at all; SQL is only generated when a
+browse is filtered or sorted. Every query carries a `maximumBytesBilled` cap
+(1 GiB by default) that BigQuery enforces *before* running anything. The grid is
+read-only: BigQuery has no enforced primary key, so no `WHERE` clause identifies
+exactly one row to edit — DML lives in the Query pane, where what it matches is
+visible.
+
+### Redis
+
+Redis has no tables, so a container is one of the server's numbered databases
+and a row is one key, with five columns: `key`, `type`, `ttl`, `size` and a
+capped `value` preview.
+
+| Concern | How it works |
+|---------|--------------|
+| Listing keys | `SCAN` with a cursor — a walk, not a jump, so no total count is shown |
+| Describing a key | type, TTL, size and preview are four commands per key, pipelined into two round trips |
+| Previewing a value | bounded reads — `GETRANGE`, `LRANGE 0 19`, `HSCAN … COUNT 20` — never `GET` or `HGETALL` |
+| Editing | a string's value, any key's TTL, a rename, a delete |
+| Raw query | one command, parsed the way `redis-cli` parses it |
+
+Editing the value of a hash, list, set, sorted set or stream is refused with the
+command to use instead: the cell holds a capped preview, and writing that back
+would replace a million-element list with what fits on screen.
+
+`SUBSCRIBE`, `PSUBSCRIBE`, `MONITOR`, `HELLO`, `RESET` and `QUIT` are refused in
+the Query pane — not for safety (`FLUSHALL` runs) but because they stream
+forever, renegotiate the protocol, or end the session, and any of the three
+leaves the connection unable to answer.
 
 ### Vector databases
 
@@ -227,7 +293,7 @@ mode encrypts without authenticating the server (F-01).
 | Data grid | `pluto_grid` |
 | Secure storage | `flutter_secure_storage` |
 | Desktop window | `window_manager` |
-| Drivers | `sqlite3`, `postgres`, `mysql_client`, `mongo_dart`, `minio`, `googleapis`, `dio`, `graphql` |
+| Drivers | `sqlite3`, `postgres`, `mysql_client`, `mongo_dart`, `redis`, `minio`, `googleapis`, `dio`, `graphql` |
 
 ---
 

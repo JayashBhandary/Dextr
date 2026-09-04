@@ -65,8 +65,14 @@ abstract final class DextrIcons {
     DataSourceKind.sqlite => LucideIcons.fileCode,
     DataSourceKind.postgres => LucideIcons.database,
     DataSourceKind.mysql => LucideIcons.database,
+    // The three warehouses read as one family — a stack of stored data — and
+    // are told apart by the label beside the glyph rather than by the glyph.
+    DataSourceKind.redshift => LucideIcons.warehouse,
+    DataSourceKind.snowflake => LucideIcons.snowflake,
+    DataSourceKind.bigquery => LucideIcons.chartBar,
     DataSourceKind.firestore => LucideIcons.sparkles,
     DataSourceKind.mongo => LucideIcons.leaf,
+    DataSourceKind.redis => LucideIcons.zap,
     DataSourceKind.s3 => LucideIcons.cloud,
     DataSourceKind.rest => LucideIcons.plug,
     DataSourceKind.graphql => LucideIcons.braces,
@@ -79,6 +85,9 @@ abstract final class DextrIcons {
         'bucket' => LucideIcons.folder,
         'view' => LucideIcons.eye,
         'collection' => LucideIcons.listTree,
+        // A Redis database is a keyspace: not a table of columns, a bag of
+        // keys, and drawn as one.
+        'keyspace' => LucideIcons.key,
         _ => LucideIcons.table2,
       };
 

@@ -69,10 +69,10 @@ packages:
     dependency: "direct main"
     description:
       name: astryx_ui
-      sha256: "61a27e384832cbcf6042cb4b159c5a1d7c0b915524a659af5ac2e1509ac1c2b8"
+      sha256: "01ad63dd0f8790c7e5f7222700dc96f35bb381071fb0fd82d771527fa019756e"
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.7-dev"
+    version: "0.0.8-dev"
   async:
     dependency: transitive
     description:
@@ -1111,6 +1111,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.6.0"
+  redis:
+    dependency: "direct main"
+    description:
+      name: redis
+      sha256: d7c7f18a374936baa786baf5f0e747aa5510bb289aad44b30ec41e3b703233b4
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.0"
   riverpod:
     dependency: transitive
     description:
