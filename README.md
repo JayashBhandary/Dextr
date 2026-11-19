@@ -13,7 +13,7 @@ side.
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-1f6feb)](#supported-platforms)
 [![Built with Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart SDK](https://img.shields.io/badge/Dart-%E2%89%A5%203.12-0175C2?logo=dart&logoColor=white)](https://dart.dev)
-[![Version](https://img.shields.io/badge/version-0.1.1-blue)](https://github.com/JayashBhandary/dextr/releases)
+[![Version](https://img.shields.io/badge/version-0.1.5-blue)](https://github.com/JayashBhandary/dextr/releases)
 
 [Install](#install) · [Data sources](#data-sources) · [Workspace](#workspace) · [Build](#build-locally) · [Release](#ci-build--release)
 
